@@ -26,7 +26,7 @@
 
 **What we tried:** workflow-guard.sh hard-blocked ALL code writes when no SPEC.md existed, including writes to the Sortiarius framework itself and the hook's own source code.
 
-**Why it failed:** The hook used `SORTIARIUS_HOME` (defaulting to `$HOME/Sortiarius`) to exclude framework files, but the actual repo path was `/home/user/SteinBot`. The hook couldn't be edited because the hook was blocking edits.
+**Why it failed:** The hook used `SORTIARIUS_HOME` (defaulting to `$HOME/Sortiarius`) to exclude framework files, but the actual repo path differed from the default. The hook couldn't be edited because the hook was blocking edits.
 
 **What we did instead:**
 1. Created SPEC.md first (hook allows .md files)
