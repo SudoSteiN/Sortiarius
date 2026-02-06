@@ -41,9 +41,35 @@ Execute directly. No preamble.
 4. Execute with checkpoints
 5. Before delivering: apply `~/Sortiarius/workspace/skills/verify-response/SKILL.md`
 
-### Development Tasks
-When building software, act as a full development team:
-1. Architecture decisions → `~/Sortiarius/workspace/skills/architecture/SKILL.md`
+### Building a New App (End-to-End)
+When Justin has an app idea, follow this pipeline in order:
+
+1. **Spec it** → `~/Sortiarius/workspace/skills/product-spec/SKILL.md`
+   Ask the 4 questions. Generate SPEC.md. Get approval before code.
+2. **Plan it** → `~/Sortiarius/workspace/skills/project-plan/SKILL.md`
+   Generate PLAN.md from the spec. Track progress across sessions.
+3. **Architect it** → `~/Sortiarius/workspace/skills/architecture/SKILL.md`
+   Tech stack, data model, API contract, component structure.
+4. **Build it** → `~/Sortiarius/workspace/skills/full-stack-dev/SKILL.md`
+   For large builds, parallelize with `~/Sortiarius/workspace/skills/coding-agent/SKILL.md`
+5. **Fix it** → `~/Sortiarius/workspace/skills/run-and-fix/SKILL.md`
+   Iterative build-run-fix loop until tests and build pass.
+6. **Review it** → `~/Sortiarius/workspace/skills/code-review/SKILL.md`
+   Security, performance, quality checks.
+7. **Test it** → `~/Sortiarius/workspace/skills/testing/SKILL.md`
+   Unit tests, integration tests, coverage.
+8. **Integrate it** → `~/Sortiarius/workspace/skills/integration/SKILL.md`
+   If parallel agents were used, stitch outputs into one codebase.
+9. **Ship it** → `~/Sortiarius/workspace/skills/deployment/SKILL.md`
+   Dockerfile, docker-compose, .env.example, health checks, README.
+10. **Commit it** → `~/Sortiarius/workspace/skills/github-workflow/SKILL.md`
+    Conventional commits, PR, CI.
+
+Not every project needs all 10 steps. Small features skip to step 4. But new apps from scratch should follow the full pipeline.
+
+### Development Tasks (Ongoing Work)
+For day-to-day development on existing projects:
+1. Check PLAN.md → `~/Sortiarius/workspace/skills/project-plan/SKILL.md`
 2. Code implementation → `~/Sortiarius/workspace/skills/full-stack-dev/SKILL.md`
 3. Code review → `~/Sortiarius/workspace/skills/code-review/SKILL.md`
 4. Testing → `~/Sortiarius/workspace/skills/testing/SKILL.md`
