@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sortiarius Dashboard</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #e6edf3;
+  --text-dim: #8b949e; --accent: #58a6ff; --green: #3fb950; --red: #f85149;
+  --yellow: #d29922; --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; background: var(--bg); color: var(--text); }
+.header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .subtitle { color: var(--text-dim); font-size: 13px; }
+.header .refresh-btn { margin-left: auto; background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.header .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.stats-bar { display: flex; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; min-width: 130px; }
+.stat .value { font-size: 24px; font-weight: 700; color: var(--accent); }
+.stat .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+.tabs { display: flex; gap: 0; padding: 0 24px; border-bottom: 1px solid var(--border); }
+.tab { padding: 10px 16px; cursor: pointer; color: var(--text-dim); border-bottom: 2px solid transparent; font-size: 13px; font-family: inherit; background: none; border-top: none; border-left: none; border-right: none; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.content { padding: 24px; max-width: 1200px; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+.card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.card-body { padding: 16px; font-size: 13px; line-height: 1.6; }
+.card-body pre { background: var(--bg); padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.running { background: rgba(88,166,255,0.15); color: var(--accent); }
+.badge.completed { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge.failed { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge.ok { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge.warn { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge.fail { background: rgba(248,81,73,0.15); color: var(--red); }
+
+.trigger-tag { display: inline-block; padding: 1px 6px; margin: 2px; border-radius: 4px; font-size: 11px; background: rgba(188,140,255,0.12); color: var(--purple); border: 1px solid rgba(188,140,255,0.2); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 12px; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: rgba(88,166,255,0.04); }
+
+.empty { text-align: center; padding: 40px; color: var(--text-dim); }
+.timestamp { color: var(--text-dim); font-size: 12px; }
+.domain { font-weight: 600; }
+.domain.azure { color: var(--accent); }
+.domain.powershell { color: var(--purple); }
+.domain.database { color: var(--yellow); }
+.domain.git { color: var(--green); }
+.domain.general { color: var(--text-dim); }
+.domain.development { color: #f0883e; }
+
+.health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.health-item { padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+
+.mem-file { cursor: pointer; }
+.mem-file:hover { background: rgba(88,166,255,0.08); }
+.mem-content { display: none; padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border); font-size: 12px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+.mem-content.expanded { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Sortiarius</h1>
+  <span class="subtitle">Personal AI Assistant Dashboard</span>
+  <button class="refresh-btn" onclick="loadAll()">Refresh</button>
+</div>
+
+<div class="stats-bar" id="stats-bar"></div>
+
+<div class="tabs">
+  <button class="tab active" data-panel="agents">Agents</button>
+  <button class="tab" data-panel="skills">Skills</button>
+  <button class="tab" data-panel="memory">Memory</button>
+  <button class="tab" data-panel="logs">Session Logs</button>
+  <button class="tab" data-panel="health">Health</button>
+</div>
+
+<div class="content">
+  <div class="panel active" id="panel-agents"></div>
+  <div class="panel" id="panel-skills"></div>
+  <div class="panel" id="panel-memory"></div>
+  <div class="panel" id="panel-logs"></div>
+  <div class="panel" id="panel-health"></div>
+</div>
+
+<script>
+const API = '';
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+  });
+});
+
+async function fetchJSON(url) {
+  const res = await fetch(API + url);
+  return res.json();
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function loadStats() {
+  const s = await fetchJSON('/api/stats');
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat"><div class="value">${s.skills}</div><div class="label">Skills</div></div>
+    <div class="stat"><div class="value">${s.hooks}</div><div class="label">Hooks</div></div>
+    <div class="stat"><div class="value">${s.memory_files}</div><div class="label">Memory Files</div></div>
+    <div class="stat"><div class="value">${s.log_entries}</div><div class="label">Log Entries</div></div>
+    <div class="stat"><div class="value">${s.agents_total}</div><div class="label">Total Agents</div></div>
+    <div class="stat"><div class="value">${s.agents_running}</div><div class="label">Running</div></div>
+  `;
+}
+
+async function loadAgents() {
+  const data = await fetchJSON('/api/agents');
+  const el = document.getElementById('panel-agents');
+  if (!data.agents.length) {
+    el.innerHTML = '<div class="empty">No agents launched yet. Run: sortiarius agent bg "your task"</div>';
+    return;
+  }
+  const rows = data.agents.map(a => {
+    const statusClass = a.status.includes('completed') ? 'completed' : a.status === 'running' ? 'running' : 'failed';
+    return `<tr>
+      <td><code>${escapeHtml(a.id)}</code></td>
+      <td><span class="badge ${statusClass}">${escapeHtml(a.status)}</span></td>
+      <td><span class="domain ${(a.domain||'').split('-')[0]}">${escapeHtml(a.domain || 'general')}</span></td>
+      <td>${escapeHtml((a.prompt || '').substring(0, 80))}${(a.prompt||'').length > 80 ? '...' : ''}</td>
+      <td class="timestamp">${escapeHtml(a.started || '')}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="card"><table>
+    <tr><th>ID</th><th>Status</th><th>Domain</th><th>Prompt</th><th>Started</th></tr>
+    ${rows}
+  </table></div>`;
+}
+
+async function loadSkills() {
+  const data = await fetchJSON('/api/skills');
+  const el = document.getElementById('panel-skills');
+  if (!data.skills.length) {
+    el.innerHTML = '<div class="empty">No skills installed</div>';
+    return;
+  }
+  el.innerHTML = data.skills.map(s => `
+    <div class="card">
+      <div class="card-header">
+        <strong>${escapeHtml(s.name)}</strong>
+        ${s.has_scripts ? '<span class="badge ok">has scripts</span>' : ''}
+        ${s.pipeline !== '[]' ? '<span class="badge running">pipeline: ' + escapeHtml(s.pipeline) + '</span>' : ''}
+      </div>
+      <div class="card-body">
+        <div>${escapeHtml(s.description)}</div>
+        <div style="margin-top:8px">${s.triggers.map(t => '<span class="trigger-tag">' + escapeHtml(t) + '</span>').join('')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadMemory() {
+  const data = await fetchJSON('/api/memory');
+  const el = document.getElementById('panel-memory');
+  const files = Object.entries(data.files);
+  if (!files.length) {
+    el.innerHTML = '<div class="empty">No memory files</div>';
+    return;
+  }
+  el.innerHTML = files.map(([name, f]) => `
+    <div class="card">
+      <div class="card-header mem-file" onclick="this.parentElement.querySelector('.mem-content').classList.toggle('expanded')">
+        <strong>${escapeHtml(name)}.md</strong>
+        <span class="timestamp">${(f.size / 1024).toFixed(1)} KB &middot; ${new Date(f.modified).toLocaleDateString()}</span>
+      </div>
+      <div class="mem-content"><pre>${escapeHtml(f.content)}</pre></div>
+    </div>
+  `).join('');
+}
+
+async function loadLogs() {
+  const data = await fetchJSON('/api/logs?limit=100');
+  const el = document.getElementById('panel-logs');
+  if (!data.entries.length) {
+    el.innerHTML = '<div class="empty">No session logs yet. Commands are logged by the learning-tracker hook.</div>';
+    return;
+  }
+  // Domain summary
+  const domainHtml = Object.entries(data.domains).map(([d, c]) =>
+    `<span class="domain ${d}">${d}: ${c}</span>`
+  ).join(' &middot; ');
+
+  const rows = data.entries.map(e => `<tr>
+    <td class="timestamp">${escapeHtml((e.timestamp||'').replace('T', ' ').replace('Z',''))}</td>
+    <td><span class="domain ${(e.domain||'')}">${escapeHtml(e.domain||'')}</span></td>
+    <td><code>${escapeHtml((e.command||'').substring(0, 100))}</code></td>
+    <td>${e.exit_code === '0' || e.exit_code === 0 ? '<span class="badge ok">0</span>' : '<span class="badge fail">' + escapeHtml(String(e.exit_code)) + '</span>'}</td>
+  </tr>`).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:12px;color:var(--text-dim);font-size:13px">
+      Total: ${data.total_logged} entries &middot; ${domainHtml}
+    </div>
+    <div class="card"><table>
+      <tr><th>Time</th><th>Domain</th><th>Command</th><th>Exit</th></tr>
+      ${rows}
+    </table></div>
+  `;
+}
+
+async function loadHealth() {
+  const data = await fetchJSON('/api/health');
+  const el = document.getElementById('panel-health');
+  el.innerHTML = `
+    <div style="margin-bottom:16px;font-size:14px">
+      ${data.ok}/${data.total} checks passing
+    </div>
+    <div class="health-grid">
+      ${data.checks.map(c => `
+        <div class="health-item">
+          <div>
+            <div style="font-weight:600">${escapeHtml(c.name)}</div>
+            <div class="timestamp">${escapeHtml(c.detail)}</div>
+          </div>
+          <span class="badge ${c.status}">${c.status}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function loadAll() {
+  loadStats();
+  loadAgents();
+  loadSkills();
+  loadMemory();
+  loadLogs();
+  loadHealth();
+}
+
+loadAll();
+setInterval(loadAll, 15000);  // Auto-refresh every 15s
+</script>
+</body>
+</html>

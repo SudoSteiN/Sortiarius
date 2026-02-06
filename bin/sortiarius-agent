@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
-# sortiarius-agent - Launch autonomous Claude Code agents for parallel work
+# sortiarius-agent - Launch autonomous Claude Code agents with persistent registry
 #
-# This is the core of Sortiarius's "intelligent system" — the ability to
-# spawn Claude instances that work independently and report back.
+# Agents are tracked in a JSON registry that persists across sessions.
+# The registry lives at workspace/scratch/agent-registry.json and can be
+# read by session-start hooks to report agent status on session resume.
 #
 # Usage:
 #   sortiarius agent run <prompt>              Run a one-shot agent with a prompt
 #   sortiarius agent run -f <file>             Run agent with prompt from file
-#   sortiarius agent bg <prompt>               Run agent in background, get output file
+#   sortiarius agent bg <prompt>               Run agent in background, get agent ID
 #   sortiarius agent parallel <file>           Run multiple agents from a task file
-#   sortiarius agent status                    Check background agent status
-#   sortiarius agent review <output-dir>       Review completed agent outputs
+#   sortiarius agent status                    Check agent status from registry + PIDs
+#   sortiarius agent review <output-dir|id>    Review completed agent outputs
 #   sortiarius agent digest                    Analyze session logs and generate insights
+#   sortiarius agent cleanup                   Prune dead/completed entries from registry
+#   sortiarius agent cancel <id>               Kill a running agent by ID
 #
 # Background agents write output to ~/Sortiarius/workspace/scratch/agents/
+# Registry lives at ~/Sortiarius/workspace/scratch/agent-registry.json
 
 set -euo pipefail
 
 SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
 AGENTS_DIR="$SORTIARIUS_HOME/workspace/scratch/agents"
 SKILLS_DIR="$SORTIARIUS_HOME/workspace/skills"
+REGISTRY_FILE="$SORTIARIUS_HOME/workspace/scratch/agent-registry.json"
+MAX_AGENTS="${SORTIARIUS_MAX_AGENTS:-5}"
+SESSION_ID="${CLAUDE_SESSION_ID:-$(basename "$(tty)" 2>/dev/null || echo "unknown")-$$}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -27,45 +34,301 @@ check_claude() {
   command -v claude >/dev/null 2>&1 || die "claude CLI not found"
 }
 
-ensure_dirs() {
-  mkdir -p "$AGENTS_DIR"
+check_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq not found. Install jq for JSON registry support."
 }
 
-# Build a context preamble that gives agents Sortiarius's identity
-build_preamble() {
-  local task_type="${1:-general}"
-  cat << 'PREAMBLE'
-You are Sortiarius, an autonomous agent instance. You are running as a background worker — there is no interactive user.
-Execute the task below completely, then stop. Be thorough but concise in your output.
-Write results to stdout. If you need to save files, save them to the current working directory.
-PREAMBLE
+ensure_dirs() {
+  mkdir -p "$AGENTS_DIR"
+  mkdir -p "$(dirname "$REGISTRY_FILE")"
+}
 
-  # Inject relevant skill context based on task type
-  if [ "$task_type" != "general" ] && [ -f "$SKILLS_DIR/$task_type/SKILL.md" ]; then
-    echo ""
-    echo "--- Relevant skill context ---"
-    cat "$SKILLS_DIR/$task_type/SKILL.md"
-    echo "--- End skill context ---"
-    echo ""
+# --- Registry Functions ---
+
+registry_init() {
+  if [ ! -f "$REGISTRY_FILE" ]; then
+    echo '[]' > "$REGISTRY_FILE"
+  fi
+  # Validate existing registry; reset if corrupt
+  if ! jq empty "$REGISTRY_FILE" 2>/dev/null; then
+    echo "warning: Registry corrupt, resetting." >&2
+    echo '[]' > "$REGISTRY_FILE"
   fi
 }
 
-# Detect which skill domain a prompt belongs to
+registry_read() {
+  registry_init
+  cat "$REGISTRY_FILE"
+}
+
+registry_write() {
+  local json="$1"
+  # Atomic write: write to temp then move
+  local tmp="${REGISTRY_FILE}.tmp.$$"
+  echo "$json" > "$tmp"
+  mv "$tmp" "$REGISTRY_FILE"
+}
+
+registry_add() {
+  local id="$1"
+  local pid="$2"
+  local prompt="$3"
+  local domain="$4"
+  local status="$5"
+  local started="$6"
+  local output_dir="$7"
+  local batch_id="${8:-null}"
+
+  local current
+  current="$(registry_read)"
+
+  local entry
+  entry="$(jq -n \
+    --arg id "$id" \
+    --argjson pid "$pid" \
+    --arg prompt "$prompt" \
+    --arg domain "$domain" \
+    --arg status "$status" \
+    --arg started "$started" \
+    --arg output_dir "$output_dir" \
+    --arg session_id "$SESSION_ID" \
+    --argjson batch_id "$(if [ "$batch_id" = "null" ]; then echo 'null'; else echo "\"$batch_id\""; fi)" \
+    '{
+      id: $id,
+      pid: $pid,
+      prompt: $prompt,
+      domain: $domain,
+      status: $status,
+      started: $started,
+      completed: null,
+      exit_code: null,
+      output_dir: $output_dir,
+      session_id: $session_id,
+      batch_id: $batch_id
+    }'
+  )"
+
+  local updated
+  updated="$(echo "$current" | jq --argjson entry "$entry" '. + [$entry]')"
+  registry_write "$updated"
+}
+
+registry_update() {
+  local id="$1"
+  shift
+  # Remaining args are key=value pairs
+  local current
+  current="$(registry_read)"
+
+  local filter="."
+  while [ $# -gt 0 ]; do
+    local key="${1%%=*}"
+    local val="${1#*=}"
+    # Determine if value should be a JSON string, number, or null
+    case "$val" in
+      null)
+        filter="$filter | map(if .id == \"$id\" then .$key = null else . end)"
+        ;;
+      [0-9]|[0-9][0-9]|[0-9][0-9][0-9])
+        filter="$filter | map(if .id == \"$id\" then .$key = $val else . end)"
+        ;;
+      *)
+        filter="$filter | map(if .id == \"$id\" then .$key = \"$val\" else . end)"
+        ;;
+    esac
+    shift
+  done
+
+  local updated
+  updated="$(echo "$current" | jq "$filter")"
+  registry_write "$updated"
+}
+
+registry_get() {
+  local id="$1"
+  registry_read | jq --arg id "$id" '.[] | select(.id == $id)'
+}
+
+registry_count_running() {
+  registry_read | jq '[.[] | select(.status == "running")] | length'
+}
+
+registry_check_limits() {
+  local running
+  running="$(registry_count_running)"
+  if [ "$running" -ge "$MAX_AGENTS" ]; then
+    die "Max concurrent agents ($MAX_AGENTS) reached. $running currently running. Use 'sortiarius agent cleanup' or 'sortiarius agent cancel <id>' to free slots. Set SORTIARIUS_MAX_AGENTS to increase the limit."
+  fi
+}
+
+# Reconcile registry: check PIDs and update status for agents that finished
+# without proper status update (e.g., session was killed).
+registry_reconcile() {
+  local current
+  current="$(registry_read)"
+
+  local updated
+  updated="$(echo "$current" | jq '
+    [.[] | if .status == "running" then
+      .status = "running"
+    else
+      .
+    end]
+  ')"
+
+  # Check each running agent's PID
+  local ids
+  ids="$(echo "$current" | jq -r '.[] | select(.status == "running") | "\(.id)|\(.pid)"')"
+
+  if [ -z "$ids" ]; then
+    return 0
+  fi
+
+  while IFS='|' read -r id pid; do
+    [ -n "$id" ] || continue
+    if ! kill -0 "$pid" 2>/dev/null; then
+      # PID is dead -- check output dir for exit code
+      local output_dir
+      output_dir="$(echo "$current" | jq -r --arg id "$id" '.[] | select(.id == $id) | .output_dir')"
+
+      local exit_code="null"
+      local new_status="failed"
+      if [ -n "$output_dir" ] && [ -f "$output_dir/exit_code.txt" ]; then
+        exit_code="$(cat "$output_dir/exit_code.txt" | tr -d '[:space:]')"
+        if [ "$exit_code" = "0" ]; then
+          new_status="completed"
+        else
+          new_status="failed"
+        fi
+      fi
+
+      local completed_time
+      if [ -n "$output_dir" ] && [ -f "$output_dir/completed.txt" ]; then
+        completed_time="$(cat "$output_dir/completed.txt")"
+      else
+        completed_time="$(date '+%Y-%m-%d %H:%M:%S')"
+      fi
+
+      registry_update "$id" "status=$new_status" "exit_code=$exit_code" "completed=$completed_time"
+    fi
+  done <<< "$ids"
+}
+
+# --- Domain Detection ---
+
 detect_domain() {
   local prompt="$1"
   local prompt_lower
   prompt_lower="$(echo "$prompt" | tr '[:upper:]' '[:lower:]')"
 
-  if echo "$prompt_lower" | grep -qE 'azure|resource group|key vault|app service|vm|virtual machine'; then
+  # Cloud / Ops domains
+  if echo "$prompt_lower" | grep -qE 'azure|resource group|key vault|app service|virtual machine|az cli|arm template|bicep'; then
     echo "azure-ops"
-  elif echo "$prompt_lower" | grep -qE 'powershell|script|automate|automation'; then
+  elif echo "$prompt_lower" | grep -qE 'powershell|\.ps1|script.*automate|automation|scheduled task'; then
     echo "powershell-automation"
-  elif echo "$prompt_lower" | grep -qE 'incident|outage|alert|emergency|production issue'; then
+  elif echo "$prompt_lower" | grep -qE 'incident|outage|alert|emergency|production issue|pagerduty|on-?call'; then
     echo "incident-response"
-  elif echo "$prompt_lower" | grep -qE 'compare|which approach|trade-off|options'; then
+  elif echo "$prompt_lower" | grep -qE 'terraform|\.tf |infrastructure as code|iac|tfstate|plan.*apply'; then
+    echo "terraform"
+  elif echo "$prompt_lower" | grep -qE 'docker|container|dockerfile|compose|image.*build|registry'; then
+    echo "docker"
+  elif echo "$prompt_lower" | grep -qE 'kubernetes|k8s|kubectl|helm|pod|deployment|service.*mesh|ingress'; then
+    echo "kubernetes"
+  elif echo "$prompt_lower" | grep -qE 'devops|ci/?cd|pipeline|github actions|jenkins|deploy|release'; then
+    echo "devops"
+
+  # Database domains
+  elif echo "$prompt_lower" | grep -qE 'database|sql server|mysql|postgres|migration|schema|query|stored proc|index.*optim'; then
+    echo "database"
+
+  # Development domains
+  elif echo "$prompt_lower" | grep -qE 'react|jsx|component|hook|use[A-Z]|useState|useEffect|redux|next\.?js'; then
+    echo "react"
+  elif echo "$prompt_lower" | grep -qE 'typescript|\.tsx?|interface |type |generic|tsconfig'; then
+    echo "typescript"
+  elif echo "$prompt_lower" | grep -qE 'node\.?js|npm|yarn|express|middleware|package\.json|require\(|import '; then
+    echo "node"
+  elif echo "$prompt_lower" | grep -qE 'python|\.py |pip|django|flask|fastapi|pandas|numpy|pytest'; then
+    echo "python"
+  elif echo "$prompt_lower" | grep -qE 'frontend|css|html|ui |ux |responsive|layout|animation|tailwind|sass'; then
+    echo "frontend"
+  elif echo "$prompt_lower" | grep -qE 'backend|api |rest |graphql|endpoint|server|microservice|grpc'; then
+    echo "backend"
+  elif echo "$prompt_lower" | grep -qE 'test|spec|jest|mocha|pytest|coverage|assert|mock|fixture|e2e|unit test'; then
+    echo "testing"
+
+  # Reasoning / analysis domains
+  elif echo "$prompt_lower" | grep -qE 'compare|which approach|trade-?off|options|pros.*cons|evaluate'; then
     echo "contrastive-scoring"
+
   else
     echo "general"
+  fi
+}
+
+# --- Preamble Builder ---
+
+# Categorize a domain as "ops" or "dev" for preamble selection
+domain_category() {
+  local domain="$1"
+  case "$domain" in
+    azure-ops|powershell-automation|incident-response|terraform|docker|kubernetes|devops|database)
+      echo "ops"
+      ;;
+    react|typescript|node|python|frontend|backend|testing)
+      echo "dev"
+      ;;
+    *)
+      echo "general"
+      ;;
+  esac
+}
+
+build_preamble() {
+  local domain="${1:-general}"
+  local category
+  category="$(domain_category "$domain")"
+
+  case "$category" in
+    ops)
+      cat << 'PREAMBLE'
+You are Sortiarius, an autonomous agent instance specializing in Cloud Operations and infrastructure.
+You are running as a background worker -- there is no interactive user.
+You are methodical, precise, and systems-oriented. Prefer automation over manual steps.
+For Azure operations, use Az CLI or PowerShell. For infrastructure, generate idempotent scripts.
+Always include rollback steps for destructive operations. Check prerequisites before executing.
+Execute the task below completely, then stop. Be thorough but concise in your output.
+Write results to stdout. If you need to save files, save them to the current working directory.
+PREAMBLE
+      ;;
+    dev)
+      cat << 'PREAMBLE'
+You are Sortiarius, an autonomous agent instance operating as a senior software developer.
+You are running as a background worker -- there is no interactive user.
+Write clean, well-structured, production-quality code. Follow established patterns and conventions.
+Include proper error handling, types (where applicable), and meaningful variable names.
+Write tests when creating new functionality. Consider edge cases.
+Prefer composition over inheritance. Keep functions small and focused.
+Execute the task below completely, then stop. Be thorough but concise in your output.
+Write results to stdout. If you need to save files, save them to the current working directory.
+PREAMBLE
+      ;;
+    *)
+      cat << 'PREAMBLE'
+You are Sortiarius, an autonomous agent instance. You are running as a background worker -- there is no interactive user.
+Execute the task below completely, then stop. Be thorough but concise in your output.
+Write results to stdout. If you need to save files, save them to the current working directory.
+PREAMBLE
+      ;;
+  esac
+
+  # Inject relevant skill context based on domain
+  if [ "$domain" != "general" ] && [ -f "$SKILLS_DIR/$domain/SKILL.md" ]; then
+    echo ""
+    echo "--- Relevant skill context ---"
+    cat "$SKILLS_DIR/$domain/SKILL.md"
+    echo "--- End skill context ---"
+    echo ""
   fi
 }
 
@@ -73,7 +336,9 @@ detect_domain() {
 
 cmd_run() {
   check_claude
+  check_jq
   ensure_dirs
+  registry_init
 
   local prompt=""
   local from_file=""
@@ -101,13 +366,39 @@ cmd_run() {
 
 Task: ${prompt}"
 
-  echo "Running agent (domain: $domain)..."
-  claude --print -p "$full_prompt"
+  local timestamp
+  timestamp="$(date '+%Y%m%d-%H%M%S')"
+  local agent_id="${timestamp}-$$"
+  local started
+  started="$(date '+%Y-%m-%d %H:%M:%S')"
+
+  # Register as a foreground agent (PID is self)
+  registry_add "$agent_id" "$$" "$prompt" "$domain" "running" "$started" "" "null"
+
+  echo "Running agent $agent_id (domain: $domain)..."
+
+  local exit_code=0
+  claude --print -p "$full_prompt" || exit_code=$?
+
+  local completed
+  completed="$(date '+%Y-%m-%d %H:%M:%S')"
+
+  if [ "$exit_code" -eq 0 ]; then
+    registry_update "$agent_id" "status=completed" "exit_code=$exit_code" "completed=$completed"
+  else
+    registry_update "$agent_id" "status=failed" "exit_code=$exit_code" "completed=$completed"
+  fi
+
+  return "$exit_code"
 }
 
 cmd_bg() {
   check_claude
+  check_jq
   ensure_dirs
+  registry_init
+  registry_reconcile
+  registry_check_limits
 
   local prompt="$*"
   [ -n "$prompt" ] || die "Usage: sortiarius agent bg <prompt>"
@@ -119,43 +410,83 @@ cmd_bg() {
 
   local timestamp
   timestamp="$(date '+%Y%m%d-%H%M%S')"
-  local agent_id="${timestamp}-$$"
-  local output_dir="$AGENTS_DIR/$agent_id"
+  # We create the ID first with a placeholder PID, update after fork
+  local output_dir="$AGENTS_DIR/pending-$$"
   mkdir -p "$output_dir"
 
   local full_prompt="${preamble}
 
 Task: ${prompt}"
 
+  local started
+  started="$(date '+%Y-%m-%d %H:%M:%S')"
+
   # Save the prompt for reference
   echo "$prompt" > "$output_dir/prompt.txt"
   echo "$domain" > "$output_dir/domain.txt"
   echo "running" > "$output_dir/status.txt"
-  date '+%Y-%m-%d %H:%M:%S' > "$output_dir/started.txt"
+  echo "$started" > "$output_dir/started.txt"
 
   # Launch Claude in the background
   (
-    claude --print -p "$full_prompt" > "$output_dir/output.txt" 2> "$output_dir/error.txt"
-    echo "$?" > "$output_dir/exit_code.txt"
-    echo "completed" > "$output_dir/status.txt"
+    local code=0
+    claude --print -p "$full_prompt" > "$output_dir/output.txt" 2> "$output_dir/error.txt" || code=$?
+    echo "$code" > "$output_dir/exit_code.txt"
+    if [ "$code" -eq 0 ]; then
+      echo "completed" > "$output_dir/status.txt"
+    else
+      echo "failed" > "$output_dir/status.txt"
+    fi
     date '+%Y-%m-%d %H:%M:%S' > "$output_dir/completed.txt"
   ) &
 
   local pid=$!
-  echo "$pid" > "$output_dir/pid.txt"
+  local agent_id="${timestamp}-${pid}"
 
-  echo "Agent launched: $agent_id (PID: $pid)"
-  echo "Output: $output_dir/output.txt"
+  # Rename output dir to include actual PID-based ID
+  local final_output_dir="$AGENTS_DIR/$agent_id"
+  mv "$output_dir" "$final_output_dir"
+
+  echo "$pid" > "$final_output_dir/pid.txt"
+
+  # Register in the persistent registry
+  registry_add "$agent_id" "$pid" "$prompt" "$domain" "running" "$started" "$final_output_dir" "null"
+
+  echo "Agent launched:"
+  echo "  ID:     $agent_id"
+  echo "  PID:    $pid"
+  echo "  Domain: $domain"
+  echo "  Output: $final_output_dir/output.txt"
+  echo ""
   echo "Check status: sortiarius agent status"
+  echo "Cancel:       sortiarius agent cancel $agent_id"
 }
 
 cmd_parallel() {
   check_claude
+  check_jq
   ensure_dirs
+  registry_init
+  registry_reconcile
 
   local task_file="${1:-}"
   [ -n "$task_file" ] || die "Usage: sortiarius agent parallel <task-file>"
   [ -f "$task_file" ] || die "File not found: $task_file"
+
+  # Count tasks to check against limit
+  local task_count=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    echo "$line" | grep -q '^#' && continue
+    task_count=$((task_count + 1))
+  done < "$task_file"
+
+  local running
+  running="$(registry_count_running)"
+  local available=$((MAX_AGENTS - running))
+  if [ "$task_count" -gt "$available" ]; then
+    die "Cannot launch $task_count agents. $running already running, limit is $MAX_AGENTS ($available slots available). Use 'sortiarius agent cleanup' or increase SORTIARIUS_MAX_AGENTS."
+  fi
 
   local batch_id
   batch_id="batch-$(date '+%Y%m%d-%H%M%S')"
@@ -163,10 +494,12 @@ cmd_parallel() {
   mkdir -p "$batch_dir"
 
   echo "Launching parallel agents from $task_file..."
+  echo "Batch: $batch_id"
   echo ""
 
   local count=0
   local pids=""
+  local agent_ids=""
 
   while IFS= read -r line; do
     # Skip empty lines and comments
@@ -186,24 +519,43 @@ cmd_parallel() {
     echo "$domain" > "$agent_dir/domain.txt"
     echo "running" > "$agent_dir/status.txt"
 
+    local started
+    started="$(date '+%Y-%m-%d %H:%M:%S')"
+    echo "$started" > "$agent_dir/started.txt"
+
     (
+      local code=0
       claude --print -p "${preamble}
 
-Task: ${line}" > "$agent_dir/output.txt" 2> "$agent_dir/error.txt"
-      echo "$?" > "$agent_dir/exit_code.txt"
-      echo "completed" > "$agent_dir/status.txt"
+Task: ${line}" > "$agent_dir/output.txt" 2> "$agent_dir/error.txt" || code=$?
+      echo "$code" > "$agent_dir/exit_code.txt"
+      if [ "$code" -eq 0 ]; then
+        echo "completed" > "$agent_dir/status.txt"
+      else
+        echo "failed" > "$agent_dir/status.txt"
+      fi
+      date '+%Y-%m-%d %H:%M:%S' > "$agent_dir/completed.txt"
     ) &
 
     local pid=$!
     echo "$pid" > "$agent_dir/pid.txt"
     pids="$pids $pid"
-    echo "  [$count] (PID $pid, domain: $domain) $line"
+
+    local timestamp
+    timestamp="$(date '+%Y%m%d-%H%M%S')"
+    local agent_id="${timestamp}-${pid}"
+    agent_ids="$agent_ids $agent_id"
+
+    # Register each task in the registry
+    registry_add "$agent_id" "$pid" "$line" "$domain" "running" "$started" "$agent_dir" "$batch_id"
+
+    echo "  [$count] ID: $agent_id (PID $pid, domain: $domain)"
+    echo "       $line"
 
   done < "$task_file"
 
   echo ""
-  echo "Launched $count agents in parallel."
-  echo "Batch: $batch_dir"
+  echo "Launched $count agents in parallel (batch: $batch_id)."
   echo ""
   echo "Waiting for all agents to complete..."
 
@@ -215,99 +567,168 @@ Task: ${line}" > "$agent_dir/output.txt" 2> "$agent_dir/error.txt"
     fi
   done
 
+  # Reconcile all entries after completion
+  registry_reconcile
+
   echo ""
   echo "All agents complete. $failed failed."
   echo "Review results: sortiarius agent review $batch_dir"
 }
 
 cmd_status() {
+  check_jq
   ensure_dirs
+  registry_init
+  registry_reconcile
 
-  echo "=== Agent Status ==="
+  echo "=== Agent Registry Status ==="
   echo ""
 
-  local found=0
-  for agent_dir in "$AGENTS_DIR"/*/; do
-    [ -d "$agent_dir" ] || continue
-    found=1
+  local registry
+  registry="$(registry_read)"
+  local total
+  total="$(echo "$registry" | jq 'length')"
 
-    local name
-    name="$(basename "$agent_dir")"
-    local status="unknown"
-    [ -f "$agent_dir/status.txt" ] && status="$(cat "$agent_dir/status.txt")"
-
-    local prompt=""
-    [ -f "$agent_dir/prompt.txt" ] && prompt="$(head -1 "$agent_dir/prompt.txt" | cut -c1-60)"
-
-    local pid=""
-    [ -f "$agent_dir/pid.txt" ] && pid="$(cat "$agent_dir/pid.txt")"
-
-    # Check if PID is still running
-    local actual_status="$status"
-    if [ "$status" = "running" ] && [ -n "$pid" ]; then
-      if ! kill -0 "$pid" 2>/dev/null; then
-        actual_status="completed (missed)"
-        echo "completed" > "$agent_dir/status.txt"
-      fi
-    fi
-
-    local icon="?"
-    case "$actual_status" in
-      running) icon=">" ;;
-      completed*) icon="+" ;;
-      failed) icon="!" ;;
-    esac
-
-    echo "  [$icon] $name ($actual_status)"
-    [ -n "$prompt" ] && echo "      $prompt..."
-
-    # Show output preview for completed agents
-    if [ "$actual_status" != "running" ] && [ -f "$agent_dir/output.txt" ]; then
-      local lines
-      lines="$(wc -l < "$agent_dir/output.txt" | tr -d ' ')"
-      echo "      output: $lines lines ($agent_dir/output.txt)"
-    fi
-
-    # Check for batch sub-agents
-    for sub_dir in "$agent_dir"/task-*/; do
-      [ -d "$sub_dir" ] || continue
-      local sub_status="unknown"
-      [ -f "$sub_dir/status.txt" ] && sub_status="$(cat "$sub_dir/status.txt")"
-      local sub_prompt=""
-      [ -f "$sub_dir/prompt.txt" ] && sub_prompt="$(head -1 "$sub_dir/prompt.txt" | cut -c1-50)"
-      echo "    - $(basename "$sub_dir"): $sub_status — $sub_prompt..."
-    done
-
-    echo ""
-  done
-
-  if [ "$found" -eq 0 ]; then
-    echo "  No agents have been launched yet."
+  if [ "$total" -eq 0 ]; then
+    echo "  No agents in registry."
     echo "  Run: sortiarius agent run <prompt>"
+    echo "       sortiarius agent bg <prompt>"
+    return 0
+  fi
+
+  local running completed failed cancelled
+  running="$(echo "$registry" | jq '[.[] | select(.status == "running")] | length')"
+  completed="$(echo "$registry" | jq '[.[] | select(.status == "completed")] | length')"
+  failed="$(echo "$registry" | jq '[.[] | select(.status == "failed")] | length')"
+  cancelled="$(echo "$registry" | jq '[.[] | select(.status == "cancelled")] | length')"
+
+  echo "  Total: $total  |  Running: $running  |  Completed: $completed  |  Failed: $failed  |  Cancelled: $cancelled"
+  echo "  Max concurrent: $MAX_AGENTS  |  Available slots: $((MAX_AGENTS - running))"
+  echo ""
+
+  # Group by batch_id for display
+  # First: show non-batch agents
+  local standalone
+  standalone="$(echo "$registry" | jq -c '[.[] | select(.batch_id == null)]')"
+  local standalone_count
+  standalone_count="$(echo "$standalone" | jq 'length')"
+
+  if [ "$standalone_count" -gt 0 ]; then
+    echo "--- Individual Agents ---"
+    echo "$standalone" | jq -c '.[]' | while IFS= read -r entry; do
+      local id status pid domain prompt_preview started_ts completed_ts exit_code
+      id="$(echo "$entry" | jq -r '.id')"
+      status="$(echo "$entry" | jq -r '.status')"
+      pid="$(echo "$entry" | jq -r '.pid')"
+      domain="$(echo "$entry" | jq -r '.domain')"
+      prompt_preview="$(echo "$entry" | jq -r '.prompt' | cut -c1-60)"
+      started_ts="$(echo "$entry" | jq -r '.started')"
+      completed_ts="$(echo "$entry" | jq -r '.completed // empty')"
+      exit_code="$(echo "$entry" | jq -r '.exit_code // empty')"
+
+      local icon
+      case "$status" in
+        running)   icon=">" ;;
+        completed) icon="+" ;;
+        failed)    icon="!" ;;
+        cancelled) icon="x" ;;
+        *)         icon="?" ;;
+      esac
+
+      echo "  [$icon] $id  ($status)"
+      echo "      Domain: $domain  |  PID: $pid"
+      echo "      Prompt: $prompt_preview..."
+      echo "      Started: $started_ts"
+      [ -n "$completed_ts" ] && echo "      Completed: $completed_ts (exit: ${exit_code:-?})"
+
+      # Show output preview for completed agents
+      local output_dir
+      output_dir="$(echo "$entry" | jq -r '.output_dir // empty')"
+      if [ -n "$output_dir" ] && [ "$status" != "running" ] && [ -f "$output_dir/output.txt" ]; then
+        local lines
+        lines="$(wc -l < "$output_dir/output.txt" | tr -d ' ')"
+        echo "      Output: $lines lines ($output_dir/output.txt)"
+      fi
+      echo ""
+    done
+  fi
+
+  # Then: show batch agents grouped together
+  local batch_ids
+  batch_ids="$(echo "$registry" | jq -r '[.[] | select(.batch_id != null) | .batch_id] | unique | .[]')"
+
+  if [ -n "$batch_ids" ]; then
+    echo "$batch_ids" | while IFS= read -r bid; do
+      [ -n "$bid" ] || continue
+      echo "--- Batch: $bid ---"
+
+      local batch_running batch_completed batch_failed
+      batch_running="$(echo "$registry" | jq --arg bid "$bid" '[.[] | select(.batch_id == $bid and .status == "running")] | length')"
+      batch_completed="$(echo "$registry" | jq --arg bid "$bid" '[.[] | select(.batch_id == $bid and .status == "completed")] | length')"
+      batch_failed="$(echo "$registry" | jq --arg bid "$bid" '[.[] | select(.batch_id == $bid and .status == "failed")] | length')"
+      echo "  Running: $batch_running  |  Completed: $batch_completed  |  Failed: $batch_failed"
+      echo ""
+
+      echo "$registry" | jq -c --arg bid "$bid" '.[] | select(.batch_id == $bid)' | while IFS= read -r entry; do
+        local id status domain prompt_preview
+        id="$(echo "$entry" | jq -r '.id')"
+        status="$(echo "$entry" | jq -r '.status')"
+        domain="$(echo "$entry" | jq -r '.domain')"
+        prompt_preview="$(echo "$entry" | jq -r '.prompt' | cut -c1-50)"
+
+        local icon
+        case "$status" in
+          running)   icon=">" ;;
+          completed) icon="+" ;;
+          failed)    icon="!" ;;
+          cancelled) icon="x" ;;
+          *)         icon="?" ;;
+        esac
+
+        echo "  [$icon] $id ($status, $domain) $prompt_preview..."
+      done
+      echo ""
+    done
   fi
 }
 
 cmd_review() {
-  local output_dir="${1:-}"
+  local target="${1:-}"
 
-  if [ -z "$output_dir" ]; then
+  if [ -z "$target" ]; then
     # Review latest agent
-    output_dir="$(ls -dt "$AGENTS_DIR"/*/ 2>/dev/null | head -1)"
-    [ -n "$output_dir" ] || die "No agent outputs found. Run an agent first."
+    target="$(ls -dt "$AGENTS_DIR"/*/ 2>/dev/null | head -1)"
+    [ -n "$target" ] || die "No agent outputs found. Run an agent first."
   fi
 
-  [ -d "$output_dir" ] || die "Directory not found: $output_dir"
+  # If target looks like an agent ID (not a path), resolve it
+  if [ ! -d "$target" ] && [ -f "$REGISTRY_FILE" ]; then
+    local resolved
+    resolved="$(jq -r --arg id "$target" '.[] | select(.id == $id) | .output_dir // empty' "$REGISTRY_FILE" 2>/dev/null)"
+    if [ -n "$resolved" ] && [ -d "$resolved" ]; then
+      target="$resolved"
+    else
+      # Try partial match
+      resolved="$(ls -d "$AGENTS_DIR"/*"$target"* 2>/dev/null | head -1)"
+      [ -n "$resolved" ] && [ -d "$resolved" ] && target="$resolved"
+    fi
+  fi
 
-  echo "=== Agent Review: $(basename "$output_dir") ==="
+  [ -d "$target" ] || die "Directory not found: $target. Use an agent ID or output directory path."
+
+  echo "=== Agent Review: $(basename "$target") ==="
   echo ""
 
   # Check if it's a batch
-  if ls "$output_dir"/task-*/ >/dev/null 2>&1; then
-    for task_dir in "$output_dir"/task-*/; do
+  if ls "$target"/task-*/ >/dev/null 2>&1; then
+    for task_dir in "$target"/task-*/; do
       [ -d "$task_dir" ] || continue
       echo "--- $(basename "$task_dir") ---"
       [ -f "$task_dir/prompt.txt" ] && echo "Prompt: $(cat "$task_dir/prompt.txt")"
       [ -f "$task_dir/domain.txt" ] && echo "Domain: $(cat "$task_dir/domain.txt")"
+      [ -f "$task_dir/started.txt" ] && echo "Started: $(cat "$task_dir/started.txt")"
+      [ -f "$task_dir/completed.txt" ] && echo "Completed: $(cat "$task_dir/completed.txt")"
+      [ -f "$task_dir/exit_code.txt" ] && echo "Exit code: $(cat "$task_dir/exit_code.txt")"
       echo ""
       if [ -f "$task_dir/output.txt" ]; then
         cat "$task_dir/output.txt"
@@ -318,27 +739,29 @@ cmd_review() {
     done
   else
     # Single agent
-    [ -f "$output_dir/prompt.txt" ] && echo "Prompt: $(cat "$output_dir/prompt.txt")"
-    [ -f "$output_dir/domain.txt" ] && echo "Domain: $(cat "$output_dir/domain.txt")"
-    [ -f "$output_dir/started.txt" ] && echo "Started: $(cat "$output_dir/started.txt")"
-    [ -f "$output_dir/completed.txt" ] && echo "Completed: $(cat "$output_dir/completed.txt")"
+    [ -f "$target/prompt.txt" ] && echo "Prompt: $(cat "$target/prompt.txt")"
+    [ -f "$target/domain.txt" ] && echo "Domain: $(cat "$target/domain.txt")"
+    [ -f "$target/started.txt" ] && echo "Started: $(cat "$target/started.txt")"
+    [ -f "$target/completed.txt" ] && echo "Completed: $(cat "$target/completed.txt")"
+    [ -f "$target/exit_code.txt" ] && echo "Exit code: $(cat "$target/exit_code.txt")"
     echo ""
-    if [ -f "$output_dir/output.txt" ]; then
-      cat "$output_dir/output.txt"
+    if [ -f "$target/output.txt" ]; then
+      cat "$target/output.txt"
     else
-      echo "(no output yet — agent may still be running)"
+      echo "(no output yet -- agent may still be running)"
     fi
 
-    if [ -f "$output_dir/error.txt" ] && [ -s "$output_dir/error.txt" ]; then
+    if [ -f "$target/error.txt" ] && [ -s "$target/error.txt" ]; then
       echo ""
       echo "--- Errors ---"
-      cat "$output_dir/error.txt"
+      cat "$target/error.txt"
     fi
   fi
 }
 
 cmd_digest() {
   check_claude
+  check_jq
   ensure_dirs
 
   local log_file="$SORTIARIUS_HOME/workspace/scratch/session-log.jsonl"
@@ -382,32 +805,159 @@ Format the output as markdown that can be directly appended to memory files."
   claude --print -p "$digest_prompt"
 }
 
+cmd_cleanup() {
+  check_jq
+  ensure_dirs
+  registry_init
+  registry_reconcile
+
+  local registry
+  registry="$(registry_read)"
+  local total_before
+  total_before="$(echo "$registry" | jq 'length')"
+
+  local mode="${1:-completed}"
+
+  case "$mode" in
+    completed)
+      # Remove completed and cancelled entries
+      local updated
+      updated="$(echo "$registry" | jq '[.[] | select(.status == "running" or .status == "failed")]')"
+      registry_write "$updated"
+      ;;
+    failed)
+      # Remove only failed entries
+      local updated
+      updated="$(echo "$registry" | jq '[.[] | select(.status != "failed")]')"
+      registry_write "$updated"
+      ;;
+    all)
+      # Remove all non-running entries
+      local updated
+      updated="$(echo "$registry" | jq '[.[] | select(.status == "running")]')"
+      registry_write "$updated"
+      ;;
+    *)
+      die "Usage: sortiarius agent cleanup [completed|failed|all]"
+      ;;
+  esac
+
+  local total_after
+  total_after="$(registry_read | jq 'length')"
+  local removed=$((total_before - total_after))
+
+  echo "Cleanup ($mode): removed $removed entries, $total_after remaining."
+}
+
+cmd_cancel() {
+  check_jq
+  ensure_dirs
+  registry_init
+
+  local target_id="${1:-}"
+  [ -n "$target_id" ] || die "Usage: sortiarius agent cancel <agent-id>"
+
+  local entry
+  entry="$(registry_get "$target_id")"
+
+  if [ -z "$entry" ] || [ "$entry" = "null" ]; then
+    # Try partial match
+    local matches
+    matches="$(registry_read | jq -r --arg id "$target_id" '[.[] | select(.id | contains($id))] | length')"
+    if [ "$matches" -eq 1 ]; then
+      target_id="$(registry_read | jq -r --arg id "$target_id" '.[] | select(.id | contains($id)) | .id')"
+      entry="$(registry_get "$target_id")"
+    elif [ "$matches" -gt 1 ]; then
+      echo "Multiple agents match '$target_id':"
+      registry_read | jq -r --arg id "$target_id" '.[] | select(.id | contains($id)) | "  \(.id) (\(.status))"'
+      die "Be more specific."
+    else
+      die "Agent not found: $target_id"
+    fi
+  fi
+
+  local status
+  status="$(echo "$entry" | jq -r '.status')"
+  local pid
+  pid="$(echo "$entry" | jq -r '.pid')"
+
+  if [ "$status" != "running" ]; then
+    echo "Agent $target_id is already $status."
+    return 0
+  fi
+
+  echo "Cancelling agent $target_id (PID: $pid)..."
+
+  if kill -0 "$pid" 2>/dev/null; then
+    # Send SIGTERM first, then SIGKILL after 5s if still alive
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+      sleep 4
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+        echo "  Sent SIGKILL (process did not respond to SIGTERM)."
+      fi
+    fi
+  else
+    echo "  PID $pid is already dead."
+  fi
+
+  local completed
+  completed="$(date '+%Y-%m-%d %H:%M:%S')"
+  registry_update "$target_id" "status=cancelled" "completed=$completed"
+
+  # Update filesystem status too
+  local output_dir
+  output_dir="$(echo "$entry" | jq -r '.output_dir // empty')"
+  if [ -n "$output_dir" ] && [ -d "$output_dir" ]; then
+    echo "cancelled" > "$output_dir/status.txt"
+    echo "$completed" > "$output_dir/completed.txt"
+  fi
+
+  echo "Agent $target_id cancelled."
+}
+
 # --- Main ---
 
 case "${1:-}" in
-  run)     shift; cmd_run "$@" ;;
-  bg)      shift; cmd_bg "$@" ;;
+  run)      shift; cmd_run "$@" ;;
+  bg)       shift; cmd_bg "$@" ;;
   parallel) cmd_parallel "${2:-}" ;;
-  status)  cmd_status ;;
-  review)  cmd_review "${2:-}" ;;
-  digest)  cmd_digest ;;
+  status)   cmd_status ;;
+  review)   cmd_review "${2:-}" ;;
+  digest)   cmd_digest ;;
+  cleanup)  cmd_cleanup "${2:-}" ;;
+  cancel)   cmd_cancel "${2:-}" ;;
   help|--help|-h)
-    echo "sortiarius agent - Autonomous Claude Code agent launcher"
+    echo "sortiarius agent - Autonomous Claude Code agent launcher with persistent registry"
     echo ""
     echo "Usage:"
-    echo "  sortiarius agent run <prompt>         Run agent interactively"
-    echo "  sortiarius agent run -f <file>        Run agent with prompt from file"
-    echo "  sortiarius agent bg <prompt>          Run agent in background"
-    echo "  sortiarius agent parallel <file>      Run multiple agents from task file"
-    echo "  sortiarius agent status               Check agent status"
-    echo "  sortiarius agent review [dir]         Review agent output"
-    echo "  sortiarius agent digest               Analyze session logs"
+    echo "  sortiarius agent run <prompt>           Run agent interactively"
+    echo "  sortiarius agent run -f <file>          Run agent with prompt from file"
+    echo "  sortiarius agent bg <prompt>            Run agent in background (prints agent ID)"
+    echo "  sortiarius agent parallel <file>        Run multiple agents from task file"
+    echo "  sortiarius agent status                 Check agent status (from registry + PID check)"
+    echo "  sortiarius agent review [dir|id]        Review agent output (by dir or agent ID)"
+    echo "  sortiarius agent digest                 Analyze session logs"
+    echo "  sortiarius agent cleanup [mode]         Prune registry (completed|failed|all, default: completed)"
+    echo "  sortiarius agent cancel <id>            Kill a running agent by ID"
+    echo ""
+    echo "Registry: $REGISTRY_FILE"
+    echo "Agents:   $AGENTS_DIR"
+    echo ""
+    echo "Environment:"
+    echo "  SORTIARIUS_MAX_AGENTS    Max concurrent agents (default: 5, current: $MAX_AGENTS)"
+    echo "  SORTIARIUS_HOME          Sortiarius home directory"
+    echo "  CLAUDE_SESSION_ID        Session ID for agent tracking"
     echo ""
     echo "Task file format (for parallel):"
-    echo "  # One task per line"
+    echo "  # One task per line (comments start with #)"
     echo "  Generate a PowerShell script to list all Azure VMs"
     echo "  Analyze our Key Vault access policies"
     echo "  Write rollback script for database migration"
+    echo "  Create React component for user dashboard"
+    echo "  Write pytest fixtures for the auth module"
     ;;
   *)       die "Unknown command: ${1:-}. Run 'sortiarius agent help'" ;;
 esac

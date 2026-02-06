@@ -11,6 +11,7 @@
 #   sortiarius skill new <name>   Scaffold a new skill
 #   sortiarius skill list         List all skills with their triggers
 #   sortiarius agent <cmd>        Launch autonomous Claude agents
+#   sortiarius ui [--port N]      Launch local web dashboard
 #   sortiarius list               List all projects
 #   sortiarius update             Pull latest Sortiarius from git
 #   sortiarius uninstall          Remove global config (keeps repo)
@@ -523,6 +524,19 @@ cmd_uninstall() {
   echo "The repo at $SORTIARIUS_HOME is still intact."
 }
 
+cmd_ui() {
+  check_sortiarius_home
+  command -v python3 >/dev/null 2>&1 || die "python3 not found. Required for the dashboard."
+
+  local port="8420"
+  if [ "${1:-}" = "--port" ] || [ "${1:-}" = "-p" ]; then
+    port="${2:-8420}"
+  fi
+
+  echo "Starting Sortiarius Dashboard..."
+  exec python3 "$SORTIARIUS_HOME/workspace/ui/server.py" --port "$port"
+}
+
 cmd_help() {
   echo "sortiarius - Sortiarius personal AI assistant launcher"
   echo ""
@@ -536,6 +550,7 @@ cmd_help() {
   echo "  sortiarius skill new <name>   Scaffold a new skill"
   echo "  sortiarius skill list         List all skills with triggers"
   echo "  sortiarius agent <cmd>        Launch autonomous Claude agents (run/bg/parallel/status/digest)"
+  echo "  sortiarius ui [--port N]      Launch local web dashboard (default: 8420)"
   echo "  sortiarius list               List all projects"
   echo "  sortiarius update             Pull latest Sortiarius from git"
   echo "  sortiarius uninstall          Remove global config (keeps repo)"
@@ -557,6 +572,7 @@ case "${1:-}" in
   doctor)      cmd_doctor ;;
   skill)       cmd_skill "${2:-}" "${3:-}" ;;
   agent)       shift; exec "$SORTIARIUS_HOME/bin/sortiarius-agent" "$@" ;;
+  ui)          cmd_ui "${2:-}" "${3:-}" ;;
   new)         cmd_new "${2:-}" ;;
   list|ls)     cmd_list ;;
   update)      cmd_update ;;
