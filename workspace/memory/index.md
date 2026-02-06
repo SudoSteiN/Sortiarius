@@ -1,6 +1,6 @@
 # Memory Index
 
-Quick-reference for SteinBot's persistent knowledge. Domain-specific details live in their own files.
+Quick-reference for Sortiarius's persistent knowledge. Domain-specific details live in their own files.
 
 ---
 

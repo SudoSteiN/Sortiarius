@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SteinBot Safety Hook: Validate bash commands before execution
+# Sortiarius Safety Hook: Validate bash commands before execution
 # Hook type: PreToolUse (matcher: Bash)
 #
 # Blocks dangerous commands deterministically — Claude can't override these.
@@ -8,7 +8,7 @@
 # Exit 2 = block with stderr message
 set -uo pipefail
 
-STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
 INPUT="$(cat)"
 
 COMMAND="$(echo "$INPUT" | jq -r '.tool_input.command // empty')"
@@ -18,7 +18,7 @@ COMMAND="$(echo "$INPUT" | jq -r '.tool_input.command // empty')"
 
 # Filesystem destruction
 if echo "$COMMAND" | grep -qE '^\s*rm\s+(-[a-zA-Z]*)?r[a-zA-Z]*f|^\s*rm\s+(-[a-zA-Z]*)?f[a-zA-Z]*r'; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: rm -rf detected. SteinBot safety hook requires explicit confirmation for recursive force-delete. Ask Justin to confirm the exact path."}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: rm -rf detected. Sortiarius safety hook requires explicit confirmation for recursive force-delete. Ask Justin to confirm the exact path."}}'
   exit 0
 fi
 
@@ -44,7 +44,7 @@ fi
 
 # DELETE without WHERE clause
 if echo "$COMMAND" | grep -qEi 'DELETE\s+FROM' && ! echo "$COMMAND" | grep -qEi 'WHERE'; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: DELETE FROM without WHERE clause. SteinBot domain rules require WHERE clause confirmation for destructive queries."}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: DELETE FROM without WHERE clause. Sortiarius domain rules require WHERE clause confirmation for destructive queries."}}'
   exit 0
 fi
 
@@ -57,7 +57,7 @@ fi
 # --- PowerShell safety: Remove-Az* without -WhatIf ---
 
 if echo "$COMMAND" | grep -qEi 'Remove-Az' && ! echo "$COMMAND" | grep -qEi '\-WhatIf'; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: Remove-Az* without -WhatIf. SteinBot domain rules require -WhatIf before destructive Azure operations. Re-run with -WhatIf first."}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: Remove-Az* without -WhatIf. Sortiarius domain rules require -WhatIf before destructive Azure operations. Re-run with -WhatIf first."}}'
   exit 0
 fi
 

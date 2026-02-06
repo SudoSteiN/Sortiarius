@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# SteinBot Session Learning Hook: Analyze session log and suggest memory updates
+# Sortiarius Session Learning Hook: Analyze session log and suggest memory updates
 # Hook type: Stop (secondary — runs after session-stop.sh)
 #
 # Reads the session log, detects patterns, and generates memory update suggestions.
-# This makes SteinBot actually learn from interactions.
+# This makes Sortiarius actually learn from interactions.
 set -uo pipefail
 
-STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
 INPUT="$(cat)"
-SCRATCH_DIR="$STEINBOT_HOME/workspace/scratch"
+SCRATCH_DIR="$SORTIARIUS_HOME/workspace/scratch"
 LOG_FILE="$SCRATCH_DIR/session-log.jsonl"
 
 # Prevent infinite loop
@@ -51,7 +51,7 @@ fi
 
 # If substantial session, suggest a memory update
 if [ -n "$LEARN_MSG" ]; then
-  jq -n --arg msg "[SteinBot Learning Summary — $TOTAL commands this session]\n${LEARN_MSG}Ask Justin if any of this should be persisted to memory." '{
+  jq -n --arg msg "[Sortiarius Learning Summary — $TOTAL commands this session]\n${LEARN_MSG}Ask Justin if any of this should be persisted to memory." '{
     "systemMessage": $msg
   }'
 fi

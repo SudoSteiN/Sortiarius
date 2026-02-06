@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# stein-agent - Launch autonomous Claude Code agents for parallel work
+# sortiarius-agent - Launch autonomous Claude Code agents for parallel work
 #
-# This is the core of SteinBot's "intelligent system" — the ability to
+# This is the core of Sortiarius's "intelligent system" — the ability to
 # spawn Claude instances that work independently and report back.
 #
 # Usage:
-#   stein agent run <prompt>              Run a one-shot agent with a prompt
-#   stein agent run -f <file>             Run agent with prompt from file
-#   stein agent bg <prompt>               Run agent in background, get output file
-#   stein agent parallel <file>           Run multiple agents from a task file
-#   stein agent status                    Check background agent status
-#   stein agent review <output-dir>       Review completed agent outputs
-#   stein agent digest                    Analyze session logs and generate insights
+#   sortiarius agent run <prompt>              Run a one-shot agent with a prompt
+#   sortiarius agent run -f <file>             Run agent with prompt from file
+#   sortiarius agent bg <prompt>               Run agent in background, get output file
+#   sortiarius agent parallel <file>           Run multiple agents from a task file
+#   sortiarius agent status                    Check background agent status
+#   sortiarius agent review <output-dir>       Review completed agent outputs
+#   sortiarius agent digest                    Analyze session logs and generate insights
 #
-# Background agents write output to ~/SteinBot/workspace/scratch/agents/
+# Background agents write output to ~/Sortiarius/workspace/scratch/agents/
 
 set -euo pipefail
 
-STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
-AGENTS_DIR="$STEINBOT_HOME/workspace/scratch/agents"
-SKILLS_DIR="$STEINBOT_HOME/workspace/skills"
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
+AGENTS_DIR="$SORTIARIUS_HOME/workspace/scratch/agents"
+SKILLS_DIR="$SORTIARIUS_HOME/workspace/skills"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -31,11 +31,11 @@ ensure_dirs() {
   mkdir -p "$AGENTS_DIR"
 }
 
-# Build a context preamble that gives agents SteinBot's identity
+# Build a context preamble that gives agents Sortiarius's identity
 build_preamble() {
   local task_type="${1:-general}"
   cat << 'PREAMBLE'
-You are SteinBot, an autonomous agent instance. You are running as a background worker — there is no interactive user.
+You are Sortiarius, an autonomous agent instance. You are running as a background worker — there is no interactive user.
 Execute the task below completely, then stop. Be thorough but concise in your output.
 Write results to stdout. If you need to save files, save them to the current working directory.
 PREAMBLE
@@ -90,7 +90,7 @@ cmd_run() {
     prompt="$(cat "$from_file")"
   fi
 
-  [ -n "$prompt" ] || die "Usage: stein agent run <prompt> or stein agent run -f <file>"
+  [ -n "$prompt" ] || die "Usage: sortiarius agent run <prompt> or sortiarius agent run -f <file>"
 
   local domain
   domain="$(detect_domain "$prompt")"
@@ -110,7 +110,7 @@ cmd_bg() {
   ensure_dirs
 
   local prompt="$*"
-  [ -n "$prompt" ] || die "Usage: stein agent bg <prompt>"
+  [ -n "$prompt" ] || die "Usage: sortiarius agent bg <prompt>"
 
   local domain
   domain="$(detect_domain "$prompt")"
@@ -146,7 +146,7 @@ Task: ${prompt}"
 
   echo "Agent launched: $agent_id (PID: $pid)"
   echo "Output: $output_dir/output.txt"
-  echo "Check status: stein agent status"
+  echo "Check status: sortiarius agent status"
 }
 
 cmd_parallel() {
@@ -154,7 +154,7 @@ cmd_parallel() {
   ensure_dirs
 
   local task_file="${1:-}"
-  [ -n "$task_file" ] || die "Usage: stein agent parallel <task-file>"
+  [ -n "$task_file" ] || die "Usage: sortiarius agent parallel <task-file>"
   [ -f "$task_file" ] || die "File not found: $task_file"
 
   local batch_id
@@ -217,7 +217,7 @@ Task: ${line}" > "$agent_dir/output.txt" 2> "$agent_dir/error.txt"
 
   echo ""
   echo "All agents complete. $failed failed."
-  echo "Review results: stein agent review $batch_dir"
+  echo "Review results: sortiarius agent review $batch_dir"
 }
 
 cmd_status() {
@@ -283,7 +283,7 @@ cmd_status() {
 
   if [ "$found" -eq 0 ]; then
     echo "  No agents have been launched yet."
-    echo "  Run: stein agent run <prompt>"
+    echo "  Run: sortiarius agent run <prompt>"
   fi
 }
 
@@ -341,7 +341,7 @@ cmd_digest() {
   check_claude
   ensure_dirs
 
-  local log_file="$STEINBOT_HOME/workspace/scratch/session-log.jsonl"
+  local log_file="$SORTIARIUS_HOME/workspace/scratch/session-log.jsonl"
   [ -f "$log_file" ] || die "No session log found. Run some commands first."
 
   local line_count
@@ -392,16 +392,16 @@ case "${1:-}" in
   review)  cmd_review "${2:-}" ;;
   digest)  cmd_digest ;;
   help|--help|-h)
-    echo "stein agent - Autonomous Claude Code agent launcher"
+    echo "sortiarius agent - Autonomous Claude Code agent launcher"
     echo ""
     echo "Usage:"
-    echo "  stein agent run <prompt>         Run agent interactively"
-    echo "  stein agent run -f <file>        Run agent with prompt from file"
-    echo "  stein agent bg <prompt>          Run agent in background"
-    echo "  stein agent parallel <file>      Run multiple agents from task file"
-    echo "  stein agent status               Check agent status"
-    echo "  stein agent review [dir]         Review agent output"
-    echo "  stein agent digest               Analyze session logs"
+    echo "  sortiarius agent run <prompt>         Run agent interactively"
+    echo "  sortiarius agent run -f <file>        Run agent with prompt from file"
+    echo "  sortiarius agent bg <prompt>          Run agent in background"
+    echo "  sortiarius agent parallel <file>      Run multiple agents from task file"
+    echo "  sortiarius agent status               Check agent status"
+    echo "  sortiarius agent review [dir]         Review agent output"
+    echo "  sortiarius agent digest               Analyze session logs"
     echo ""
     echo "Task file format (for parallel):"
     echo "  # One task per line"
@@ -409,5 +409,5 @@ case "${1:-}" in
     echo "  Analyze our Key Vault access policies"
     echo "  Write rollback script for database migration"
     ;;
-  *)       die "Unknown command: ${1:-}. Run 'stein agent help'" ;;
+  *)       die "Unknown command: ${1:-}. Run 'sortiarius agent help'" ;;
 esac

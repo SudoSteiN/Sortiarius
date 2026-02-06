@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SteinBot Setup - Run once to make SteinBot your global Claude Code assistant
+# Sortiarius Setup - Run once to make Sortiarius your global Claude Code assistant
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -40,7 +40,7 @@ resolve_path() {
   echo "$target"
 }
 
-echo "=== SteinBot Global Setup ==="
+echo "=== Sortiarius Global Setup ==="
 echo "Repo: $REPO_DIR"
 echo ""
 
@@ -54,11 +54,11 @@ ok "git found"
 if command -v claude >/dev/null 2>&1; then
   ok "claude CLI found"
 else
-  echo "  [warn] claude CLI not found - install before using SteinBot"
+  echo "  [warn] claude CLI not found - install before using Sortiarius"
   echo "         https://docs.anthropic.com/en/docs/claude-code"
 fi
 
-[ -f "$REPO_DIR/CLAUDE.md" ] || die "CLAUDE.md not found in $REPO_DIR - is this the SteinBot repo?"
+[ -f "$REPO_DIR/CLAUDE.md" ] || die "CLAUDE.md not found in $REPO_DIR - is this the Sortiarius repo?"
 ok "CLAUDE.md found"
 
 echo ""
@@ -95,19 +95,19 @@ echo ""
 
 # --- 3. Add bin/ to PATH ---
 
-echo "Installing stein command..."
+echo "Installing sortiarius command..."
 PROFILE="$(detect_shell_profile)"
 BIN_DIR="$REPO_DIR/bin"
 
-[ -f "$BIN_DIR/stein" ] || die "bin/stein not found in $REPO_DIR"
-[ -x "$BIN_DIR/stein" ] || chmod +x "$BIN_DIR/stein"
+[ -f "$BIN_DIR/sortiarius" ] || die "bin/sortiarius not found in $REPO_DIR"
+[ -x "$BIN_DIR/sortiarius" ] || chmod +x "$BIN_DIR/sortiarius"
 
 if grep -qF "$BIN_DIR" "$PROFILE" 2>/dev/null; then
   skip "Already in PATH ($PROFILE)"
 else
   {
     echo ""
-    echo "# SteinBot - personal AI assistant"
+    echo "# Sortiarius - personal AI assistant"
     echo "export PATH=\"$BIN_DIR:\$PATH\""
   } >> "$PROFILE"
   ok "Added to PATH in $PROFILE"
@@ -136,12 +136,12 @@ echo "Activate now:"
 echo "  source $PROFILE"
 echo ""
 echo "Then use from anywhere:"
-echo "  stein              Claude Code + SteinBot in current dir"
-echo "  stein new my-app   Create project at ~/projects/my-app"
-echo "  stein home         Manage skills and memory"
-echo "  stein sync         Git push workspace changes"
-echo "  stein help         All commands"
-echo "  claude             Also works - SteinBot loads globally"
+echo "  sortiarius              Claude Code + Sortiarius in current dir"
+echo "  sortiarius new my-app   Create project at ~/projects/my-app"
+echo "  sortiarius home         Manage skills and memory"
+echo "  sortiarius sync         Git push workspace changes"
+echo "  sortiarius help         All commands"
+echo "  claude             Also works - Sortiarius loads globally"
 echo ""
-echo "Next step: Edit ~/SteinBot/workspace/MEMORY.md with your environment details"
+echo "Next step: Edit ~/Sortiarius/workspace/memory/index.md with your environment details"
 echo "(Azure subscription, resource groups, SQL instances, etc.)"

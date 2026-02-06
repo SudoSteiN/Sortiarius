@@ -1,18 +1,18 @@
-# SteinBot - How to Use
+# Sortiarius - How to Use
 
 ## How It Works
 
-SteinBot lives globally on your machine. After setup, **every** `claude` session is SteinBot - regardless of what directory you're in. No API keys, no external services.
+Sortiarius lives globally on your machine. After setup, **every** `claude` session is Sortiarius - regardless of what directory you're in. No API keys, no external services.
 
 ```
-~/.claude/CLAUDE.md  →  symlink  →  ~/SteinBot/CLAUDE.md
+~/.claude/CLAUDE.md  →  symlink  →  ~/Sortiarius/CLAUDE.md
          ↓
 Claude Code reads it automatically in every session
          ↓
-SteinBot identity + skills + memory + hooks always available
+Sortiarius identity + skills + memory + hooks always available
 ```
 
-When you're in a specific project, that project's local `CLAUDE.md` layers on top - adding project context without replacing SteinBot.
+When you're in a specific project, that project's local `CLAUDE.md` layers on top - adding project context without replacing Sortiarius.
 
 **What makes this intelligent:** Hooks enforce safety rules deterministically (code, not suggestions). Session logging tracks patterns. Autonomous agents run parallel tasks. Memory persists across sessions. The system gets smarter over time.
 
@@ -21,8 +21,8 @@ When you're in a specific project, that project's local `CLAUDE.md` layers on to
 ## Setup (One Time)
 
 ```bash
-git clone https://github.com/SudoSteiN/SteinBot.git ~/SteinBot
-cd ~/SteinBot
+git clone https://github.com/SudoSteiN/SteinBot.git ~/Sortiarius
+cd ~/Sortiarius
 ./setup.sh
 source ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
 ```
@@ -30,33 +30,33 @@ source ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
 The setup script will:
 1. Verify prerequisites (git, claude CLI)
 2. Symlink `~/.claude/CLAUDE.md` to the repo (backs up existing if any)
-3. Add the `stein` command to your PATH
+3. Add the `sortiarius` command to your PATH
 4. Create `~/projects/` for new projects
 
 ---
 
 ## Daily Use
 
-### Open SteinBot anywhere
+### Open Sortiarius anywhere
 ```bash
-stein              # Current directory
-claude             # Same - SteinBot identity loads globally
+sortiarius              # Current directory
+claude             # Same - Sortiarius identity loads globally
 ```
 
 ### Create a new project
 ```bash
-stein new my-terraform-module
+sortiarius new my-terraform-module
 ```
-Creates `~/projects/my-terraform-module/` with a project-local `CLAUDE.md` template and opens SteinBot in it.
+Creates `~/projects/my-terraform-module/` with a project-local `CLAUDE.md` template and opens Sortiarius in it.
 
-### Manage SteinBot itself
+### Manage Sortiarius itself
 ```bash
-stein home         # Open in ~/SteinBot to edit skills, memory, config
-stein memory       # Quick-edit memory index in your $EDITOR
-stein memory azure # Edit azure-specific memory
-stein sync         # Preview and commit workspace changes to git
-stein update       # Pull latest changes from remote
-stein doctor       # Check framework health (including hooks)
+sortiarius home         # Open in ~/Sortiarius to edit skills, memory, config
+sortiarius memory       # Quick-edit memory index in your $EDITOR
+sortiarius memory azure # Edit azure-specific memory
+sortiarius sync         # Preview and commit workspace changes to git
+sortiarius update       # Pull latest changes from remote
+sortiarius doctor       # Check framework health (including hooks)
 ```
 
 ---
@@ -64,14 +64,14 @@ stein doctor       # Check framework health (including hooks)
 ## The Two-Layer System
 
 ```
-Layer 1 (Global):  ~/.claude/CLAUDE.md → ~/SteinBot/CLAUDE.md
-                   Always active. SteinBot identity, skills, domain rules.
+Layer 1 (Global):  ~/.claude/CLAUDE.md → ~/Sortiarius/CLAUDE.md
+                   Always active. Sortiarius identity, skills, domain rules.
 
 Layer 2 (Local):   ~/projects/my-app/CLAUDE.md
                    Project-specific context layered on top.
 ```
 
-**Example:** Working in a Terraform project. SteinBot's global rules (Azure safety, PowerShell standards) apply automatically. The project's local CLAUDE.md adds: "This project manages the East region infrastructure using Terraform 1.7."
+**Example:** Working in a Terraform project. Sortiarius's global rules (Azure safety, PowerShell standards) apply automatically. The project's local CLAUDE.md adds: "This project manages the East region infrastructure using Terraform 1.7."
 
 ---
 
@@ -79,33 +79,33 @@ Layer 2 (Local):   ~/projects/my-app/CLAUDE.md
 
 | Command | What it does |
 |---------|-------------|
-| `stein` | Open SteinBot in current directory |
-| `stein new <name>` | Create new project at ~/projects/\<name\> |
-| `stein home` | Open SteinBot home (manage skills/memory) |
-| `stein memory [file]` | Edit memory file in $EDITOR (default: index) |
-| `stein sync [--all]` | Preview and commit workspace changes |
-| `stein doctor` | Check framework health (symlink, skills, memory, hooks) |
-| `stein skill new <name>` | Scaffold a new skill with template |
-| `stein skill list` | List all skills with their triggers |
-| `stein agent run <prompt>` | Run an autonomous Claude agent |
-| `stein agent bg <prompt>` | Run agent in background |
-| `stein agent parallel <file>` | Run multiple agents from task file |
-| `stein agent status` | Check background agent status |
-| `stein agent review [dir]` | Review agent output |
-| `stein agent digest` | Analyze session logs for patterns |
-| `stein list` | List all projects in ~/projects/ |
-| `stein update` | Pull latest SteinBot from git |
-| `stein uninstall` | Remove global config (keeps repo) |
-| `stein help` | Show all commands |
-| `stein <path>` | Open SteinBot in a specific directory |
+| `sortiarius` | Open Sortiarius in current directory |
+| `sortiarius new <name>` | Create new project at ~/projects/\<name\> |
+| `sortiarius home` | Open Sortiarius home (manage skills/memory) |
+| `sortiarius memory [file]` | Edit memory file in $EDITOR (default: index) |
+| `sortiarius sync [--all]` | Preview and commit workspace changes |
+| `sortiarius doctor` | Check framework health (symlink, skills, memory, hooks) |
+| `sortiarius skill new <name>` | Scaffold a new skill with template |
+| `sortiarius skill list` | List all skills with their triggers |
+| `sortiarius agent run <prompt>` | Run an autonomous Claude agent |
+| `sortiarius agent bg <prompt>` | Run agent in background |
+| `sortiarius agent parallel <file>` | Run multiple agents from task file |
+| `sortiarius agent status` | Check background agent status |
+| `sortiarius agent review [dir]` | Review agent output |
+| `sortiarius agent digest` | Analyze session logs for patterns |
+| `sortiarius list` | List all projects in ~/projects/ |
+| `sortiarius update` | Pull latest Sortiarius from git |
+| `sortiarius uninstall` | Remove global config (keeps repo) |
+| `sortiarius help` | Show all commands |
+| `sortiarius <path>` | Open Sortiarius in a specific directory |
 
 ### Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `STEINBOT_HOME` | `~/SteinBot` | SteinBot repo location |
-| `STEINBOT_PROJECTS` | `~/projects` | Where `stein new` creates projects |
-| `EDITOR` | `vim` | Editor for `stein memory` |
+| `SORTIARIUS_HOME` | `~/Sortiarius` | Sortiarius repo location |
+| `SORTIARIUS_PROJECTS` | `~/projects` | Where `sortiarius new` creates projects |
+| `EDITOR` | `vim` | Editor for `sortiarius memory` |
 
 ---
 
@@ -148,28 +148,28 @@ Get-AzVM                       # Read-only Azure operation
 ### Editing hooks
 
 ```bash
-stein home    # Opens SteinBot repo in Claude
+sortiarius home    # Opens Sortiarius repo in Claude
 # Edit .claude/hooks/*.sh
 # Edit .claude/settings.json to add/remove hooks
-stein sync    # Commit changes
+sortiarius sync    # Commit changes
 ```
 
 ---
 
 ## Autonomous Agents
 
-SteinBot can spawn independent Claude instances for parallel work.
+Sortiarius can spawn independent Claude instances for parallel work.
 
 ### Run a one-shot agent
 ```bash
-stein agent run "Generate a PowerShell script to audit all Key Vault access policies"
+sortiarius agent run "Generate a PowerShell script to audit all Key Vault access policies"
 ```
 
 ### Run in background
 ```bash
-stein agent bg "Analyze our Azure resource tags for compliance"
-stein agent status   # Check progress
-stein agent review   # Read output when done
+sortiarius agent bg "Analyze our Azure resource tags for compliance"
+sortiarius agent status   # Check progress
+sortiarius agent review   # Read output when done
 ```
 
 ### Run multiple agents in parallel
@@ -182,14 +182,14 @@ Write incident response runbook for SQL AG failover
 ```
 
 ```bash
-stein agent parallel tasks.txt
+sortiarius agent parallel tasks.txt
 ```
 
 All three agents run simultaneously. Results are saved to `workspace/scratch/agents/`.
 
 ### Analyze session patterns
 ```bash
-stein agent digest
+sortiarius agent digest
 ```
 Reads the session command log (built by the learning-tracker hook) and uses Claude to identify:
 - Repeated command patterns (candidates for automation)
@@ -201,10 +201,10 @@ Reads the session command log (built by the learning-tracker hook) and uses Clau
 
 ## The Learning Loop
 
-SteinBot gets smarter over time through this cycle:
+Sortiarius gets smarter over time through this cycle:
 
 ```
-1. You work with SteinBot
+1. You work with Sortiarius
          ↓
 2. learning-tracker.sh logs every command (domain, success/failure)
          ↓
@@ -212,34 +212,34 @@ SteinBot gets smarter over time through this cycle:
          ↓
 4. session-learn.sh analyzes the session and suggests memory updates
          ↓
-5. You update memory files (stein memory azure, etc.)
+5. You update memory files (sortiarius memory azure, etc.)
          ↓
-6. stein sync commits the updates
+6. sortiarius sync commits the updates
          ↓
 7. session-start.sh loads updated memory into the next session
          ↓
-8. SteinBot has more context → better responses → repeat
+8. Sortiarius has more context → better responses → repeat
 ```
 
-Periodically run `stein agent digest` to mine deeper patterns from the accumulated session logs.
+Periodically run `sortiarius agent digest` to mine deeper patterns from the accumulated session logs.
 
 ---
 
 ## Skills
 
-Skills live at `~/SteinBot/workspace/skills/` and are **autodiscovered**. Each skill has a `SKILL.md` with YAML frontmatter containing triggers. Claude matches requests to skills automatically — no routing table to maintain.
+Skills live at `~/Sortiarius/workspace/skills/` and are **autodiscovered**. Each skill has a `SKILL.md` with YAML frontmatter containing triggers. Claude matches requests to skills automatically — no routing table to maintain.
 
 ### List installed skills
 ```bash
-stein skill list
+sortiarius skill list
 ```
 
 ### Add a new skill
 ```bash
-stein skill new my-skill-name
+sortiarius skill new my-skill-name
 ```
 
-This scaffolds `~/SteinBot/workspace/skills/my-skill-name/SKILL.md` with the standard template.
+This scaffolds `~/Sortiarius/workspace/skills/my-skill-name/SKILL.md` with the standard template.
 
 ### Skill YAML fields
 
@@ -254,7 +254,7 @@ This scaffolds `~/SteinBot/workspace/skills/my-skill-name/SKILL.md` with the sta
 
 ## Memory
 
-Memory is split by domain under `~/SteinBot/workspace/memory/`:
+Memory is split by domain under `~/Sortiarius/workspace/memory/`:
 
 | File | Contents |
 |------|----------|
@@ -266,22 +266,22 @@ Memory is split by domain under `~/SteinBot/workspace/memory/`:
 
 ### Edit memory
 ```bash
-stein memory          # Opens index.md
-stein memory azure    # Opens azure.md
-stein memory incidents # Opens incidents.md
+sortiarius memory          # Opens index.md
+sortiarius memory azure    # Opens azure.md
+sortiarius memory incidents # Opens incidents.md
 ```
 
 ### Timestamp convention
 Use `<!-- learned: YYYY-MM-DD -->` on entries so stale knowledge can be identified and pruned.
 
-**Important:** Memory does NOT auto-sync. Run `stein sync` at the end of productive sessions, or when SteinBot reminds you (the Stop hook will nudge you).
+**Important:** Memory does NOT auto-sync. Run `sortiarius sync` at the end of productive sessions, or when Sortiarius reminds you (the Stop hook will nudge you).
 
 ---
 
 ## Health Checks
 
 ```bash
-stein doctor
+sortiarius doctor
 ```
 
 Checks:
@@ -289,7 +289,7 @@ Checks:
 - All skills have valid YAML frontmatter with `name:` and `triggers:`
 - Memory directory exists with expected files
 - Git repo and remote are configured
-- `stein` and `claude` commands are in PATH
+- `sortiarius` and `claude` commands are in PATH
 - `.claude/settings.json` is valid JSON with correct hook count
 - All hook scripts are executable
 - Agent launcher exists
@@ -299,17 +299,17 @@ Checks:
 ## Uninstalling
 
 ```bash
-stein uninstall
+sortiarius uninstall
 ```
 
-This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo stays intact. To fully remove, also delete `~/SteinBot` and remove the PATH line from your shell profile.
+This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo stays intact. To fully remove, also delete `~/Sortiarius` and remove the PATH line from your shell profile.
 
 ---
 
 ## File Structure
 
 ```
-~/SteinBot/                                # Home base
+~/Sortiarius/                              # Home base
 ├── CLAUDE.md                              # Brain (symlinked to ~/.claude/)
 ├── HOW-TO-USE.md                          # This file
 ├── setup.sh                               # One-time global setup
@@ -324,8 +324,8 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
 │       ├── session-stop.sh                # Workspace dirty check
 │       └── session-learn.sh               # Session analysis + memory suggestions
 ├── bin/
-│   ├── stein                              # Main launcher command
-│   └── stein-agent                        # Autonomous agent launcher
+│   ├── sortiarius                         # Main launcher command
+│   └── sortiarius-agent                   # Autonomous agent launcher
 └── workspace/
     ├── memory/                            # Persistent knowledge (split by domain)
     │   ├── index.md                       # Quick-reference and preferences
@@ -345,9 +345,9 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
         └── verify-response/SKILL.md       # Self-verification
 
 ~/.claude/
-└── CLAUDE.md → ~/SteinBot/CLAUDE.md       # Symlink (created by setup.sh)
+└── CLAUDE.md → ~/Sortiarius/CLAUDE.md     # Symlink (created by setup.sh)
 
-~/projects/                                # Your projects (created by stein new)
+~/projects/                                # Your projects (created by sortiarius new)
 └── my-app/
     └── CLAUDE.md                          # Project-specific context
 ```

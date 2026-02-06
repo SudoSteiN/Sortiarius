@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# SteinBot Context Injection Hook: Load skill manifest + memory on session start
+# Sortiarius Context Injection Hook: Load skill manifest + memory on session start
 # Hook type: SessionStart
 #
 # Injects a compact skill manifest and memory summary into every session
 # so Claude has warm context without needing to scan the filesystem.
 set -uo pipefail
 
-STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
-SKILLS_DIR="$STEINBOT_HOME/workspace/skills"
-MEMORY_DIR="$STEINBOT_HOME/workspace/memory"
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
+SKILLS_DIR="$SORTIARIUS_HOME/workspace/skills"
+MEMORY_DIR="$SORTIARIUS_HOME/workspace/memory"
 
 # Build skill manifest
 SKILL_MANIFEST=""
@@ -38,18 +38,18 @@ fi
 
 # Build workspace dirty status
 WORKSPACE_DIRTY=""
-if [ -d "$STEINBOT_HOME/.git" ]; then
-  dirty_count="$(git -C "$STEINBOT_HOME" diff --name-only workspace/ 2>/dev/null | wc -l | tr -d ' ')"
-  untracked_count="$(git -C "$STEINBOT_HOME" ls-files --others --exclude-standard workspace/ 2>/dev/null | wc -l | tr -d ' ')"
+if [ -d "$SORTIARIUS_HOME/.git" ]; then
+  dirty_count="$(git -C "$SORTIARIUS_HOME" diff --name-only workspace/ 2>/dev/null | wc -l | tr -d ' ')"
+  untracked_count="$(git -C "$SORTIARIUS_HOME" ls-files --others --exclude-standard workspace/ 2>/dev/null | wc -l | tr -d ' ')"
   total=$((dirty_count + untracked_count))
   if [ "$total" -gt 0 ]; then
-    WORKSPACE_DIRTY="WARNING: $total unsaved workspace changes. Remind Justin to run 'stein sync'."
+    WORKSPACE_DIRTY="WARNING: $total unsaved workspace changes. Remind Justin to run 'sortiarius sync'."
   fi
 fi
 
 # Compose the system context message
-CONTEXT="[SteinBot Session Context — injected by hook]
-Available skills (autodiscovered from ~/SteinBot/workspace/skills/):
+CONTEXT="[Sortiarius Session Context — injected by hook]
+Available skills (autodiscovered from ~/Sortiarius/workspace/skills/):
 $(echo -e "$SKILL_MANIFEST")
 Memory preferences:
 ${MEMORY_SUMMARY:-  (no preferences recorded yet)}

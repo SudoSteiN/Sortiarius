@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SteinBot Safety Hook: Protect sensitive files from modification
+# Sortiarius Safety Hook: Protect sensitive files from modification
 # Hook type: PreToolUse (matcher: Edit|Write)
 #
 # Prevents Claude from modifying files that should never be auto-edited.

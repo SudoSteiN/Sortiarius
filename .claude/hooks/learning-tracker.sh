@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# SteinBot Learning Tracker: Log significant operations for pattern detection
+# Sortiarius Learning Tracker: Log significant operations for pattern detection
 # Hook type: PostToolUse (matcher: Bash)
 #
-# Tracks commands that were run so SteinBot can learn patterns over time.
+# Tracks commands that were run so Sortiarius can learn patterns over time.
 # Writes to workspace/scratch/session-log.jsonl (gitignored).
 # This is async — doesn't block Claude's workflow.
 set -uo pipefail
 
-STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
-SCRATCH_DIR="$STEINBOT_HOME/workspace/scratch"
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
+SCRATCH_DIR="$SORTIARIUS_HOME/workspace/scratch"
 LOG_FILE="$SCRATCH_DIR/session-log.jsonl"
 
 INPUT="$(cat)"

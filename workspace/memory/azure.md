@@ -6,7 +6,7 @@ Environment details and patterns for Azure infrastructure.
 
 ## Environment
 
-Fill these in so SteinBot has context about your infrastructure.
+Fill these in so Sortiarius has context about your infrastructure.
 
 ```yaml
 azure:
