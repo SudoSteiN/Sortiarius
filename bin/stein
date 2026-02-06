@@ -7,60 +7,110 @@
 #   stein home               Open SteinBot in ~/SteinBot (manage skills/memory)
 #   stein memory             Edit memory file directly
 #   stein sync               Commit and push memory/skill updates
+#   stein list               List all projects
+#   stein update             Pull latest SteinBot from git
+#   stein uninstall          Remove global config (keeps repo)
 #   stein <path>             Open SteinBot in a specific directory
 
-set -e
+set -euo pipefail
 
 STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
 PROJECTS_DIR="${STEINBOT_PROJECTS:-$HOME/projects}"
 
-case "${1:-}" in
-  "")
-    # No args: open Claude Code in current directory
-    exec claude
-    ;;
+# --- Helpers ---
 
-  home)
-    cd "$STEINBOT_HOME"
-    exec claude
-    ;;
+die() { echo "error: $*" >&2; exit 1; }
 
-  memory)
-    "${EDITOR:-vim}" "$STEINBOT_HOME/workspace/MEMORY.md"
-    ;;
+check_claude() {
+  command -v claude >/dev/null 2>&1 || die "claude CLI not found. Install: https://docs.anthropic.com/en/docs/claude-code"
+}
 
-  sync)
-    cd "$STEINBOT_HOME"
-    if git diff --quiet workspace/ 2>/dev/null; then
-      echo "No workspace changes to sync."
+check_git() {
+  command -v git >/dev/null 2>&1 || die "git not found. Install git first."
+}
+
+check_steinbot_home() {
+  [ -d "$STEINBOT_HOME" ] || die "SteinBot home not found at $STEINBOT_HOME. Set STEINBOT_HOME or clone the repo there."
+  [ -f "$STEINBOT_HOME/CLAUDE.md" ] || die "CLAUDE.md not found in $STEINBOT_HOME. Is this the right repo?"
+}
+
+# Cross-platform sed -i (macOS vs Linux)
+portable_sed_i() {
+  if sed --version >/dev/null 2>&1; then
+    # GNU sed (Linux)
+    sed -i "$@"
+  else
+    # BSD sed (macOS)
+    sed -i '' "$@"
+  fi
+}
+
+# --- Commands ---
+
+cmd_default() {
+  check_claude
+  exec claude
+}
+
+cmd_home() {
+  check_claude
+  check_steinbot_home
+  cd "$STEINBOT_HOME"
+  exec claude
+}
+
+cmd_memory() {
+  check_steinbot_home
+  "${EDITOR:-vim}" "$STEINBOT_HOME/workspace/MEMORY.md"
+}
+
+cmd_sync() {
+  check_git
+  check_steinbot_home
+  cd "$STEINBOT_HOME"
+
+  if git diff --quiet workspace/ 2>/dev/null && git diff --cached --quiet workspace/ 2>/dev/null; then
+    echo "No workspace changes to sync."
+    return 0
+  fi
+
+  git add workspace/
+  git commit -m "Sync workspace - $(date '+%Y-%m-%d %H:%M')"
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    if git push; then
+      echo "Synced and pushed."
     else
-      git add workspace/
-      git commit -m "Sync memory and skills - $(date '+%Y-%m-%d %H:%M')"
-      git push && echo "Synced." || echo "Push failed. Changes committed locally."
+      echo "Committed locally but push failed. Run 'git push' manually when ready."
     fi
-    ;;
+  else
+    echo "Committed locally. No remote configured."
+  fi
+}
 
-  new)
-    if [ -z "${2:-}" ]; then
-      echo "Usage: stein new <project-name>"
-      exit 1
-    fi
-    PROJECT_NAME="$2"
-    PROJECT_DIR="$PROJECTS_DIR/$PROJECT_NAME"
+cmd_new() {
+  local project_name="${1:-}"
+  [ -n "$project_name" ] || die "Usage: stein new <project-name>"
 
-    if [ -d "$PROJECT_DIR" ]; then
-      echo "Project $PROJECT_DIR already exists. Opening it."
-      cd "$PROJECT_DIR"
-      exec claude
-    fi
+  check_claude
+  check_git
+  check_steinbot_home
 
-    mkdir -p "$PROJECT_DIR"
-    cd "$PROJECT_DIR"
-    git init
+  local project_dir="$PROJECTS_DIR/$project_name"
 
-    # Create a project-local CLAUDE.md that layers on top of global SteinBot
-    cat > CLAUDE.md << 'PROJ_EOF'
-# Project: __PROJECT_NAME__
+  if [ -d "$project_dir" ]; then
+    echo "Project $project_dir already exists. Opening it."
+    cd "$project_dir"
+    exec claude
+  fi
+
+  mkdir -p "$project_dir"
+  cd "$project_dir"
+  git init
+
+  # Create project-local CLAUDE.md
+  cat > CLAUDE.md << PROJ_EOF
+# Project: $project_name
 
 ## Project Context
 <!-- Add project-specific instructions here -->
@@ -76,31 +126,121 @@ case "${1:-}" in
 <!-- Any project-specific conventions or constraints -->
 PROJ_EOF
 
-    sed -i "s/__PROJECT_NAME__/$PROJECT_NAME/g" CLAUDE.md
-    git add CLAUDE.md
-    git commit -m "Initialize $PROJECT_NAME with SteinBot project template"
+  git add CLAUDE.md
+  git commit -m "Initialize $project_name with SteinBot project template"
 
-    echo "Created $PROJECT_DIR with project CLAUDE.md"
-    echo "Opening SteinBot..."
-    exec claude
-    ;;
+  echo "Created $project_dir"
+  echo "Opening SteinBot..."
+  exec claude
+}
 
+cmd_list() {
+  if [ ! -d "$PROJECTS_DIR" ]; then
+    echo "No projects directory at $PROJECTS_DIR"
+    return 0
+  fi
+
+  echo "Projects in $PROJECTS_DIR:"
+  echo ""
+  local found=0
+  for dir in "$PROJECTS_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    found=1
+    local name
+    name="$(basename "$dir")"
+    if [ -f "$dir/CLAUDE.md" ]; then
+      echo "  $name  (has CLAUDE.md)"
+    else
+      echo "  $name"
+    fi
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "  (none yet - create one with: stein new <name>)"
+  fi
+}
+
+cmd_update() {
+  check_git
+  check_steinbot_home
+  cd "$STEINBOT_HOME"
+
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    die "No git remote configured in $STEINBOT_HOME"
+  fi
+
+  local branch
+  branch="$(git branch --show-current)"
+  echo "Pulling latest SteinBot ($branch)..."
+  git pull origin "$branch"
+  echo "Updated."
+}
+
+cmd_uninstall() {
+  echo "This will remove SteinBot's global configuration:"
+  echo "  - Remove symlink at ~/.claude/CLAUDE.md"
+  echo "  - The repo at $STEINBOT_HOME will NOT be deleted"
+  echo ""
+  read -rp "Continue? [y/N] " confirm
+  [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "Cancelled."; exit 0; }
+
+  # Remove symlink
+  if [ -L "$HOME/.claude/CLAUDE.md" ]; then
+    rm "$HOME/.claude/CLAUDE.md"
+    echo "Removed ~/.claude/CLAUDE.md symlink"
+  fi
+
+  # Restore backup if exists
+  if [ -f "$HOME/.claude/CLAUDE.md.bak" ]; then
+    mv "$HOME/.claude/CLAUDE.md.bak" "$HOME/.claude/CLAUDE.md"
+    echo "Restored previous ~/.claude/CLAUDE.md from backup"
+  fi
+
+  echo ""
+  echo "Done. SteinBot global config removed."
+  echo "To also remove from PATH, edit your shell profile and remove the SteinBot lines."
+  echo "The repo at $STEINBOT_HOME is still intact."
+}
+
+cmd_help() {
+  echo "stein - SteinBot personal AI assistant launcher"
+  echo ""
+  echo "Usage:"
+  echo "  stein                Open SteinBot in current directory"
+  echo "  stein new <name>     Create new project at ~/projects/<name>"
+  echo "  stein home           Open SteinBot home (manage skills/memory)"
+  echo "  stein memory         Edit memory file in \$EDITOR"
+  echo "  stein sync           Commit and push workspace changes"
+  echo "  stein list           List all projects"
+  echo "  stein update         Pull latest SteinBot from git"
+  echo "  stein uninstall      Remove global config (keeps repo)"
+  echo "  stein <path>         Open SteinBot in specific directory"
+  echo ""
+  echo "Environment:"
+  echo "  STEINBOT_HOME        SteinBot repo location (default: ~/SteinBot)"
+  echo "  STEINBOT_PROJECTS    Projects directory (default: ~/projects)"
+  echo "  EDITOR               Editor for 'stein memory' (default: vim)"
+}
+
+# --- Main ---
+
+case "${1:-}" in
+  "")          cmd_default ;;
+  home)        cmd_home ;;
+  memory)      cmd_memory ;;
+  sync)        cmd_sync ;;
+  new)         cmd_new "${2:-}" ;;
+  list|ls)     cmd_list ;;
+  update)      cmd_update ;;
+  uninstall)   cmd_uninstall ;;
+  help|--help|-h) cmd_help ;;
   *)
-    # Treat argument as a directory path
     if [ -d "$1" ]; then
+      check_claude
       cd "$1"
       exec claude
     else
-      echo "Not a directory: $1"
-      echo ""
-      echo "Usage:"
-      echo "  stein                Open in current directory"
-      echo "  stein new <name>     Create new project"
-      echo "  stein home           Open in SteinBot home"
-      echo "  stein memory         Edit memory file"
-      echo "  stein sync           Commit and push workspace changes"
-      echo "  stein <path>         Open in specific directory"
-      exit 1
+      die "Not a directory: $1 (run 'stein help' for usage)"
     fi
     ;;
 esac

@@ -114,10 +114,7 @@ After significant interactions, update `~/SteinBot/workspace/MEMORY.md` with:
 - Approaches that failed and why
 - Environment-specific details learned
 
-At the end of meaningful sessions, commit memory updates:
-```bash
-cd ~/SteinBot && git add workspace/MEMORY.md && git commit -m "Update memory" && git push
-```
+Memory is persisted manually. Remind Justin to run `stein sync` at the end of productive sessions to commit memory updates to git.
 
 ---
 
