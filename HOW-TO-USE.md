@@ -21,7 +21,7 @@ When you're in a specific project, that project's local `CLAUDE.md` layers on to
 ## Setup (One Time)
 
 ```bash
-git clone https://github.com/SudoSteiN/SteinBot.git ~/Sortiarius
+git clone https://github.com/SudoSteiN/Sortiarius.git ~/Sortiarius
 cd ~/Sortiarius
 ./setup.sh
 source ~/.zshrc   # or ~/.bashrc / ~/.bash_profile
