@@ -47,6 +47,8 @@ Skills are discovered automatically. Do NOT maintain a hardcoded list here.
 
 **To match:** Scan all `~/SteinBot/workspace/skills/*/SKILL.md` files, read their `triggers:` field, and apply the best-matching skill. If multiple skills match, apply all relevant ones.
 
+**Note:** On session start, the SessionStart hook injects a skill manifest with all available skills and their triggers. Use this injected context rather than re-scanning the filesystem each time.
+
 ---
 
 ## Project Management
@@ -101,6 +103,11 @@ These require explicit confirmation before executing:
 - Any operation affecting multiple resources
 - Rollback scripts must be generated before destructive changes
 
+**Hook enforcement:** Safety hooks in `.claude/hooks/` enforce these rules deterministically:
+- `safety-bash.sh` — Blocks `rm -rf`, `DROP TABLE`, `DELETE` without `WHERE`, `Remove-Az*` without `-WhatIf`, Azure resource deletion, production config writes
+- `safety-files.sh` — Blocks edits to `.env`, credentials, `.git/`, SSH keys
+- These cannot be overridden by prompt instructions. They are code, not suggestions.
+
 ---
 
 ## Memory
@@ -122,9 +129,47 @@ Memory is persisted manually. Remind Justin to run `stein sync` at the end of pr
 
 ---
 
+## Hooks (Deterministic Enforcement)
+
+SteinBot uses Claude Code hooks at `.claude/settings.json` to enforce rules that must never be violated, regardless of prompt instructions. Hooks fire automatically — you don't need to call them.
+
+| Hook | Event | What it does |
+|------|-------|-------------|
+| `session-start.sh` | SessionStart | Injects skill manifest + memory preferences into context |
+| `safety-bash.sh` | PreToolUse:Bash | Blocks destructive commands deterministically |
+| `safety-files.sh` | PreToolUse:Edit/Write | Protects secrets and sensitive files |
+| `learning-tracker.sh` | PostToolUse:Bash | Logs commands to session log for pattern analysis |
+| `session-stop.sh` | Stop | Checks for uncommitted workspace changes |
+| `session-learn.sh` | Stop | Analyzes session log and suggests memory updates |
+
+If a hook blocks your action, **do not try to work around it**. The block is intentional. Inform Justin what was blocked and why, then ask how to proceed.
+
+---
+
+## Autonomous Agents
+
+SteinBot can spawn parallel Claude instances for independent tasks:
+
+```bash
+stein agent run "Generate a rollback script for the database migration"
+stein agent bg "Audit all Key Vault access policies across resource groups"
+stein agent parallel tasks.txt   # Multiple agents from a file
+stein agent digest               # Analyze session patterns and suggest improvements
+```
+
+Use autonomous agents when:
+- Multiple independent tasks can run in parallel
+- A background research task shouldn't block the main conversation
+- Batch operations across multiple resources
+- Post-session analysis and learning
+
+---
+
 ## Iteration
 
 After each session, consider:
 - Did a skill trigger correctly? If not, should triggers be updated?
 - Did a new pattern emerge that should become a skill?
 - Should memory files be updated with what was learned?
+- Did any hook fire incorrectly? Update `.claude/hooks/` if needed.
+- Run `stein agent digest` periodically to mine session logs for patterns.

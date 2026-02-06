@@ -10,6 +10,7 @@
 #   stein doctor             Check framework health
 #   stein skill new <name>   Scaffold a new skill
 #   stein skill list         List all skills with their triggers
+#   stein agent <cmd>        Launch autonomous Claude agents
 #   stein list               List all projects
 #   stein update             Pull latest SteinBot from git
 #   stein uninstall          Remove global config (keeps repo)
@@ -263,6 +264,50 @@ cmd_doctor() {
     echo "  [WARN] claude CLI not found"
   fi
 
+  # Check hooks
+  echo "Checking hooks..."
+  local hooks_settings="$STEINBOT_HOME/.claude/settings.json"
+  if [ -f "$hooks_settings" ]; then
+    if jq empty "$hooks_settings" 2>/dev/null; then
+      local hook_count
+      hook_count="$(jq '[.hooks | to_entries[] | .value[].hooks[]] | length' "$hooks_settings" 2>/dev/null || echo 0)"
+      echo "  [ok] settings.json valid ($hook_count hooks configured)"
+    else
+      echo "  [FAIL] settings.json has invalid JSON"
+      issues=$((issues + 1))
+    fi
+  else
+    echo "  [WARN] No .claude/settings.json found (no hooks active)"
+  fi
+
+  local hooks_dir="$STEINBOT_HOME/.claude/hooks"
+  if [ -d "$hooks_dir" ]; then
+    local hook_scripts=0
+    local non_exec=0
+    for hf in "$hooks_dir"/*.sh; do
+      [ -f "$hf" ] || continue
+      hook_scripts=$((hook_scripts + 1))
+      if [ ! -x "$hf" ]; then
+        echo "  [FAIL] $(basename "$hf") is not executable"
+        issues=$((issues + 1))
+        non_exec=$((non_exec + 1))
+      fi
+    done
+    if [ "$non_exec" -eq 0 ] && [ "$hook_scripts" -gt 0 ]; then
+      echo "  [ok] $hook_scripts hook scripts, all executable"
+    fi
+  else
+    echo "  [WARN] No .claude/hooks/ directory"
+  fi
+
+  # Check agent launcher
+  echo "Checking agents..."
+  if [ -x "$STEINBOT_HOME/bin/stein-agent" ]; then
+    echo "  [ok] stein-agent launcher found"
+  else
+    echo "  [WARN] stein-agent not found or not executable"
+  fi
+
   echo ""
   if [ "$issues" -eq 0 ]; then
     echo "All checks passed."
@@ -490,6 +535,7 @@ cmd_help() {
   echo "  stein doctor             Check framework health"
   echo "  stein skill new <name>   Scaffold a new skill"
   echo "  stein skill list         List all skills with triggers"
+  echo "  stein agent <cmd>        Launch autonomous Claude agents (run/bg/parallel/status/digest)"
   echo "  stein list               List all projects"
   echo "  stein update             Pull latest SteinBot from git"
   echo "  stein uninstall          Remove global config (keeps repo)"
@@ -510,6 +556,7 @@ case "${1:-}" in
   sync)        cmd_sync "${2:-}" ;;
   doctor)      cmd_doctor ;;
   skill)       cmd_skill "${2:-}" "${3:-}" ;;
+  agent)       shift; exec "$STEINBOT_HOME/bin/stein-agent" "$@" ;;
   new)         cmd_new "${2:-}" ;;
   list|ls)     cmd_list ;;
   update)      cmd_update ;;
