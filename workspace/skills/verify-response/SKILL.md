@@ -5,6 +5,7 @@ triggers:
   - verify
   - check my work
   - before sending
+pipeline: []
 ---
 
 # Response Verification Skill
@@ -46,3 +47,6 @@ If the response isn't good enough:
 
 **Execution Failure** (right approach, wrong implementation)
 → Fix the specific error
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

@@ -9,6 +9,7 @@ triggers:
   - sql azure
   - virtual machine
   - storage account
+pipeline: []
 ---
 
 # Azure Operations Skill
@@ -74,3 +75,6 @@ try {
     # Log to incident channel if production
 }
 ```
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

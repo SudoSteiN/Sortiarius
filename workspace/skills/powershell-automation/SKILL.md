@@ -6,6 +6,7 @@ triggers:
   - automate
   - automation
   - scheduled task
+pipeline: []
 ---
 
 # PowerShell Automation Skill
@@ -102,3 +103,6 @@ do {
     $uri = $response.'@odata.nextLink'
 } while ($uri)
 ```
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

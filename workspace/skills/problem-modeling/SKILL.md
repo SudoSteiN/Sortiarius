@@ -6,6 +6,7 @@ triggers:
   - need to think through
   - multiple steps
   - not sure how to approach
+pipeline: []
 ---
 
 # Problem Modeling Skill
@@ -89,3 +90,6 @@ Before proceeding to solution:
 If the solution fails, check:
 1. Was the model wrong? (Go back to modeling)
 2. Was the execution wrong? (Fix the approach)
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

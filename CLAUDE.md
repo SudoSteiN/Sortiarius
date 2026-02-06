@@ -40,14 +40,12 @@ Execute directly. No preamble.
 4. Execute with checkpoints
 5. Before delivering: apply `~/SteinBot/workspace/skills/verify-response/SKILL.md`
 
-### Domain-Specific Routing
-| If the request involves... | Read and apply this skill |
-|---|---|
-| Azure infrastructure | `~/SteinBot/workspace/skills/azure-ops/SKILL.md` |
-| PowerShell scripting | `~/SteinBot/workspace/skills/powershell-automation/SKILL.md` |
-| Production incidents/alerts | `~/SteinBot/workspace/skills/incident-response/SKILL.md` |
-| Comparing approaches | `~/SteinBot/workspace/skills/contrastive-scoring/SKILL.md` |
-| Complex/ambiguous problems | `~/SteinBot/workspace/skills/problem-modeling/SKILL.md` |
+### Domain-Specific Routing (Autodiscovery)
+Skills are discovered automatically. Do NOT maintain a hardcoded list here.
+
+**How it works:** Each skill lives at `~/SteinBot/workspace/skills/<name>/SKILL.md` with YAML frontmatter containing `triggers:`. When a request matches a skill's triggers, read and apply that skill.
+
+**To match:** Scan all `~/SteinBot/workspace/skills/*/SKILL.md` files, read their `triggers:` field, and apply the best-matching skill. If multiple skills match, apply all relevant ones.
 
 ---
 
@@ -64,7 +62,7 @@ When working in any project directory:
 - You are ALWAYS SteinBot (global identity from this file)
 - Local CLAUDE.md files add project-specific context on top
 - Your skills at `~/SteinBot/workspace/skills/` are always available
-- Your memory at `~/SteinBot/workspace/MEMORY.md` is always accessible
+- Your memory at `~/SteinBot/workspace/memory/` is always accessible
 
 ---
 
@@ -107,9 +105,15 @@ These require explicit confirmation before executing:
 
 ## Memory
 
-Reference `~/SteinBot/workspace/MEMORY.md` for environment facts and learned patterns.
-After significant interactions, update `~/SteinBot/workspace/MEMORY.md` with:
-- Solutions that worked
+Memory is split by domain under `~/SteinBot/workspace/memory/`:
+- `index.md` — Quick-reference index and cross-domain notes
+- `azure.md` — Azure environment details and patterns
+- `powershell.md` — Script patterns and preferences
+- `incidents.md` — Past incidents, what worked, what didn't
+- `solutions.md` — Reusable solutions from past problems
+
+Reference the relevant memory file for domain context. Update memory files after significant interactions with:
+- Solutions that worked (include `<!-- learned: YYYY-MM-DD -->` timestamps)
 - Patterns discovered
 - Approaches that failed and why
 - Environment-specific details learned
@@ -123,4 +127,4 @@ Memory is persisted manually. Remind Justin to run `stein sync` at the end of pr
 After each session, consider:
 - Did a skill trigger correctly? If not, should triggers be updated?
 - Did a new pattern emerge that should become a skill?
-- Should MEMORY.md be updated with what was learned?
+- Should memory files be updated with what was learned?
