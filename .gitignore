@@ -1,0 +1,28 @@
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+
+# API tokens (never commit these)
+**/botToken
+**/appToken
+
+# Node
+node_modules/
+package-lock.json
+
+# OpenClaw runtime
+.openclaw-cache/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
