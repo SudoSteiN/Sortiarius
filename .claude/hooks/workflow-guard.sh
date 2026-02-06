@@ -24,6 +24,15 @@ if echo "$FILE_PATH" | grep -qF "$SORTIARIUS_HOME"; then
   exit 0
 fi
 
+# --- Skip the Sortiarius framework repo itself ---
+# CLAUDE_PROJECT_DIR is the repo root where hooks live.
+# Framework internals (workspace/, .claude/, bin/) should not be gated.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/hooks" ]; then
+  if echo "$FILE_PATH" | grep -qF "$CLAUDE_PROJECT_DIR"; then
+    exit 0
+  fi
+fi
+
 # --- Skip non-code files ---
 # Allow markdown, config, gitignore, env examples, dockerfiles, yaml, json, toml, lock files
 if echo "$FILE_PATH" | grep -qEi '\.(md|txt|yml|yaml|toml|json|lock|gitignore|dockerignore|env\.example|csv|svg|png|jpg|gif|ico|woff|ttf|eot)$|Dockerfile|Makefile|LICENSE|README|SPEC|PLAN|CHANGELOG'; then
