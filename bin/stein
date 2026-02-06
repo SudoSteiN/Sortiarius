@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# stein - Launch SteinBot (Claude Code with global context)
+#
+# Usage:
+#   stein                    Open SteinBot in current directory
+#   stein new <name>         Create new project and open SteinBot in it
+#   stein home               Open SteinBot in ~/SteinBot (manage skills/memory)
+#   stein memory             Edit memory file directly
+#   stein sync               Commit and push memory/skill updates
+#   stein <path>             Open SteinBot in a specific directory
+
+set -e
+
+STEINBOT_HOME="${STEINBOT_HOME:-$HOME/SteinBot}"
+PROJECTS_DIR="${STEINBOT_PROJECTS:-$HOME/projects}"
+
+case "${1:-}" in
+  "")
+    # No args: open Claude Code in current directory
+    exec claude
+    ;;
+
+  home)
+    cd "$STEINBOT_HOME"
+    exec claude
+    ;;
+
+  memory)
+    "${EDITOR:-vim}" "$STEINBOT_HOME/workspace/MEMORY.md"
+    ;;
+
+  sync)
+    cd "$STEINBOT_HOME"
+    if git diff --quiet workspace/ 2>/dev/null; then
+      echo "No workspace changes to sync."
+    else
+      git add workspace/
+      git commit -m "Sync memory and skills - $(date '+%Y-%m-%d %H:%M')"
+      git push && echo "Synced." || echo "Push failed. Changes committed locally."
+    fi
+    ;;
+
+  new)
+    if [ -z "${2:-}" ]; then
+      echo "Usage: stein new <project-name>"
+      exit 1
+    fi
+    PROJECT_NAME="$2"
+    PROJECT_DIR="$PROJECTS_DIR/$PROJECT_NAME"
+
+    if [ -d "$PROJECT_DIR" ]; then
+      echo "Project $PROJECT_DIR already exists. Opening it."
+      cd "$PROJECT_DIR"
+      exec claude
+    fi
+
+    mkdir -p "$PROJECT_DIR"
+    cd "$PROJECT_DIR"
+    git init
+
+    # Create a project-local CLAUDE.md that layers on top of global SteinBot
+    cat > CLAUDE.md << 'PROJ_EOF'
+# Project: __PROJECT_NAME__
+
+## Project Context
+<!-- Add project-specific instructions here -->
+<!-- SteinBot's global identity, skills, and rules still apply via ~/.claude/CLAUDE.md -->
+
+## Tech Stack
+<!-- e.g., Language, framework, database, hosting -->
+
+## Key Files
+<!-- List important files Claude should know about -->
+
+## Project Rules
+<!-- Any project-specific conventions or constraints -->
+PROJ_EOF
+
+    sed -i "s/__PROJECT_NAME__/$PROJECT_NAME/g" CLAUDE.md
+    git add CLAUDE.md
+    git commit -m "Initialize $PROJECT_NAME with SteinBot project template"
+
+    echo "Created $PROJECT_DIR with project CLAUDE.md"
+    echo "Opening SteinBot..."
+    exec claude
+    ;;
+
+  *)
+    # Treat argument as a directory path
+    if [ -d "$1" ]; then
+      cd "$1"
+      exec claude
+    else
+      echo "Not a directory: $1"
+      echo ""
+      echo "Usage:"
+      echo "  stein                Open in current directory"
+      echo "  stein new <name>     Create new project"
+      echo "  stein home           Open in SteinBot home"
+      echo "  stein memory         Edit memory file"
+      echo "  stein sync           Commit and push workspace changes"
+      echo "  stein <path>         Open in specific directory"
+      exit 1
+    fi
+    ;;
+esac

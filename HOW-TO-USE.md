@@ -2,83 +2,91 @@
 
 ## How It Works
 
-This repo **is** your personal assistant. Claude Code reads `CLAUDE.md` automatically when you open it in this directory. That file contains your personality, work context, domain rules, and skill routing. No API keys, no external services, no middleware.
+SteinBot lives globally on your machine. After setup, **every** `claude` session is SteinBot - regardless of what directory you're in. No API keys, no external services.
 
 ```
-You (in terminal) → Claude Code → reads CLAUDE.md → becomes SteinBot
+~/.claude/CLAUDE.md  →  symlink  →  ~/SteinBot/CLAUDE.md
+         ↓
+Claude Code reads it automatically in every session
+         ↓
+SteinBot identity + skills + memory always available
 ```
+
+When you're in a specific project, that project's local `CLAUDE.md` layers on top - adding project context without replacing SteinBot.
 
 ---
 
 ## Setup (One Time)
 
-### 1. Clone the repo
 ```bash
 git clone https://github.com/SudoSteiN/SteinBot.git ~/SteinBot
+cd ~/SteinBot
+./setup.sh
+source ~/.zshrc   # or ~/.bashrc
 ```
 
-### 2. Add a shell alias
-```bash
-# Add to your shell profile (~/.bashrc, ~/.zshrc, or $PROFILE for PowerShell)
-
-# Bash/Zsh:
-echo 'alias stein="cd ~/SteinBot && claude"' >> ~/.zshrc
-source ~/.zshrc
-
-# PowerShell:
-Add-Content $PROFILE 'function stein { Set-Location ~/SteinBot; claude }'
-```
-
-### 3. Fill in your environment details
-Edit `workspace/MEMORY.md` with your Azure subscription ID, resource group names, SQL instances, etc. This gives the assistant context about your specific environment.
+That's it. The setup script:
+1. Symlinks `~/.claude/CLAUDE.md` to the repo (global identity)
+2. Adds `stein` command to your PATH
+3. Creates `~/projects/` for new projects
+4. Installs a memory sync hook
 
 ---
 
 ## Daily Use
 
+### Open SteinBot anywhere
 ```bash
-stein
+stein              # Current directory - SteinBot is already loaded
+claude             # Same thing - SteinBot identity loads globally
 ```
 
-That's it. You're now talking to SteinBot. It will:
-- Answer simple questions directly
-- Model complex problems before solving them
-- Use Azure/PowerShell best practices automatically
-- Follow incident response procedures for alerts
-- Compare approaches when multiple options exist
-- Self-verify before delivering important responses
+### Create a new project
+```bash
+stein new my-terraform-module
+```
+This creates `~/projects/my-terraform-module/` with a project-local `CLAUDE.md` template and opens SteinBot in it.
 
----
-
-## Example Conversations
-
-**Simple:**
-```
-> What's the PowerShell to list all resource groups with their tags?
-```
-
-**Complex:**
-```
-> I need to migrate our Key Vault secrets to a new vault in a different region.
-> Think through this carefully.
-```
-
-**Incident:**
-```
-> Alert: SQL database CPU at 95% on the East production server. Help me investigate.
-```
-
-**Comparison:**
-```
-> Should I use a managed identity or service principal for our new app service
-> to access Key Vault? Compare the approaches.
+### Manage SteinBot itself
+```bash
+stein home         # Open in ~/SteinBot to edit skills, memory, config
+stein memory       # Quick-edit MEMORY.md in your editor
+stein sync         # Commit and push workspace changes to git
 ```
 
 ---
 
-## How Skills Work
+## The Two-Layer System
 
-Skills are markdown files in `workspace/skills/`. Claude Code reads them on-demand when a request matches. You don't trigger them manually - the routing in `CLAUDE.md` handles it.
+```
+Layer 1 (Global):  ~/.claude/CLAUDE.md → ~/SteinBot/CLAUDE.md
+                   Always active. SteinBot identity, skills, domain rules.
+
+Layer 2 (Local):   ~/projects/my-app/CLAUDE.md
+                   Project-specific context layered on top.
+```
+
+**Example:** You're working in a Terraform project. SteinBot's global rules (Azure safety, PowerShell standards) still apply. The project's local CLAUDE.md adds: "This project manages the East region infrastructure using Terraform 1.7."
+
+---
+
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `stein` | Open SteinBot in current directory |
+| `stein new <name>` | Create new project with template CLAUDE.md |
+| `stein home` | Open SteinBot home (manage skills/memory) |
+| `stein memory` | Edit memory file in your editor |
+| `stein sync` | Git commit + push workspace changes |
+| `stein <path>` | Open SteinBot in a specific directory |
+| `claude` | Works too - SteinBot is global |
+
+---
+
+## Skills (always available)
+
+Skills live at `~/SteinBot/workspace/skills/` and are available from any directory. Claude reads them on-demand based on the request.
 
 | Skill | Triggers on |
 |-------|------------|
@@ -91,26 +99,25 @@ Skills are markdown files in `workspace/skills/`. Claude Code reads them on-dema
 
 ---
 
-## Memory & Learning
+## Memory
 
-`workspace/MEMORY.md` stores persistent knowledge:
-- Your environment details (subscription IDs, resource groups, servers)
-- Patterns that work in your specific setup
-- Solutions from past problems
+`~/SteinBot/workspace/MEMORY.md` persists across all sessions:
+- Environment details (subscription IDs, resource groups, servers)
+- Patterns that work
+- Past solutions
 - Things that failed and why
 
-The assistant updates this file as it learns. You can also edit it directly.
+Memory syncs to git automatically, or manually with `stein sync`.
 
 ---
 
-## Customization
+## Adding a New Skill
 
-### Add a new skill
 ```bash
-mkdir workspace/skills/your-skill-name
+mkdir ~/SteinBot/workspace/skills/your-skill-name
 ```
 
-Create `SKILL.md` with YAML frontmatter:
+Create `SKILL.md`:
 ```markdown
 ---
 name: your-skill-name
@@ -123,45 +130,38 @@ triggers:
 # Skill content here
 ```
 
-Then add a routing entry in `CLAUDE.md` under "Domain-Specific Routing".
+Add a routing entry in `~/SteinBot/CLAUDE.md` under "Domain-Specific Routing".
 
-### Adjust personality
-Edit the "Identity & Personality" section in `CLAUDE.md`.
-
-### Add domain rules
-Add rules under "Domain Rules" in `CLAUDE.md`.
-
----
-
-## Keeping It Updated
-
-```bash
-cd ~/SteinBot
-git add -A && git commit -m "Update memory and skills"
-git push
-```
-
-This lets you version-control your assistant's knowledge and sync it across machines.
+Then `stein sync` to push it.
 
 ---
 
 ## File Structure
 
 ```
-SteinBot/
-├── CLAUDE.md                              # Brain - loaded every session
+~/SteinBot/                                # Home base (source of truth)
+├── CLAUDE.md                              # Brain (symlinked to ~/.claude/)
 ├── HOW-TO-USE.md                          # This file
-├── .gitignore
+├── setup.sh                               # One-time global setup
+├── bin/
+│   └── stein                              # Launcher command
 └── workspace/
     ├── SOUL.md                            # Personality reference
     ├── AGENTS.md                          # Behavior rules reference
-    ├── MEMORY.md                          # Persistent knowledge (grows over time)
+    ├── MEMORY.md                          # Persistent knowledge
     ├── TOOLS.md                           # Tool safety rules
     └── skills/
-        ├── problem-modeling/SKILL.md      # UPSA methodology
-        ├── azure-ops/SKILL.md             # Azure patterns
-        ├── powershell-automation/SKILL.md # Script templates
-        ├── incident-response/SKILL.md     # Incident procedures
-        ├── contrastive-scoring/SKILL.md   # Approach comparison
-        └── verify-response/SKILL.md       # Self-verification
+        ├── problem-modeling/SKILL.md
+        ├── azure-ops/SKILL.md
+        ├── powershell-automation/SKILL.md
+        ├── incident-response/SKILL.md
+        ├── contrastive-scoring/SKILL.md
+        └── verify-response/SKILL.md
+
+~/.claude/
+└── CLAUDE.md → ~/SteinBot/CLAUDE.md       # Symlink (created by setup.sh)
+
+~/projects/                                # Your projects (created by stein new)
+└── my-app/
+    └── CLAUDE.md                          # Project-specific context
 ```
