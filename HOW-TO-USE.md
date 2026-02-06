@@ -1,115 +1,167 @@
-# How to Use These Files
+# SteinBot - How to Use
 
-## Step 1: Create Project Directory
+## How It Works
+
+This repo **is** your personal assistant. Claude Code reads `CLAUDE.md` automatically when you open it in this directory. That file contains your personality, work context, domain rules, and skill routing. No API keys, no external services, no middleware.
+
+```
+You (in terminal) → Claude Code → reads CLAUDE.md → becomes SteinBot
+```
+
+---
+
+## Setup (One Time)
+
+### 1. Clone the repo
 ```bash
-mkdir ~/personal-assistant
-cd ~/personal-assistant
+git clone https://github.com/SudoSteiN/SteinBot.git ~/SteinBot
 ```
 
-## Step 2: Put CLAUDE.md in the Directory
-Copy the `CLAUDE.md` file from this output into `~/personal-assistant/CLAUDE.md`
-
-## Step 3: Open Claude Code in That Directory
+### 2. Add a shell alias
 ```bash
-cd ~/personal-assistant
-claude
+# Add to your shell profile (~/.bashrc, ~/.zshrc, or $PROFILE for PowerShell)
+
+# Bash/Zsh:
+echo 'alias stein="cd ~/SteinBot && claude"' >> ~/.zshrc
+source ~/.zshrc
+
+# PowerShell:
+Add-Content $PROFILE 'function stein { Set-Location ~/SteinBot; claude }'
 ```
 
-## Step 4: Paste This Kickoff Prompt
+### 3. Fill in your environment details
+Edit `workspace/MEMORY.md` with your Azure subscription ID, resource group names, SQL instances, etc. This gives the assistant context about your specific environment.
 
-```
-Read CLAUDE.md and execute all phases in order. Create all files as specified. Start with Phase 1 now. Only ask me questions for: API keys, channel choice, or environment-specific values like subscription IDs. Don't ask if I'm ready, just start.
-```
+---
 
-That's it. Claude Code will:
-1. Read your CLAUDE.md
-2. Install OpenClaw
-3. Create all the prompt files (SOUL.md, AGENTS.md, etc.)
-4. Create all 6 skills
-5. Configure the system
-6. Guide you through channel setup
-7. Test everything
+## Daily Use
 
-## What You'll Need to Provide
-
-When Claude Code asks:
-- **Anthropic API key** - Get from console.anthropic.com (you already have Claude Pro, just need API access)
-- **Slack or Discord** - Which channel you want first
-- **Bot tokens** - Claude Code will tell you exactly where to get them
-- **Azure details** (optional) - Subscription ID, common resource group names
-
-## Expected Time
-- Phase 1-2: 10 minutes
-- Phase 3-4: 15 minutes
-- Phase 5: 20-30 minutes (channel auth is the slowest part)
-- Phase 6: 10 minutes
-
-**Total: About 1 hour for a working system**
-
-## If Something Breaks
-
-Tell Claude Code:
-```
-That failed. Run openclaw doctor and diagnose the issue.
+```bash
+stein
 ```
 
-Or:
+That's it. You're now talking to SteinBot. It will:
+- Answer simple questions directly
+- Model complex problems before solving them
+- Use Azure/PowerShell best practices automatically
+- Follow incident response procedures for alerts
+- Compare approaches when multiple options exist
+- Self-verify before delivering important responses
+
+---
+
+## Example Conversations
+
+**Simple:**
 ```
-Check if the file was created correctly and fix any issues.
-```
-
-## Claude Code Pro Tips
-
-**Keep it in context:**
-- Claude Code reads CLAUDE.md automatically when it's in the root
-- If it forgets, say: "Re-read CLAUDE.md"
-
-**Be directive:**
-- "Create the file now" > "Can you create the file?"
-- "Fix it" > "What do you think went wrong?"
-
-**Batch operations:**
-- "Create all 6 skills now" works better than one at a time
-
-**Verification:**
-- After file creation, say: "Verify all files exist with ls"
-- Say: "Cat the file to make sure it's correct"
-
-**If it gets stuck:**
-- "Stop. What phase are we on? What's the next concrete step?"
-- "Skip this for now, move to the next phase"
-
-**Resuming later:**
-- "We're on Phase 3. Continue from where we left off."
-
-## Files You'll End Up With
-
-```
-workspace/
-├── SOUL.md                # Personality
-├── AGENTS.md              # Instructions
-├── MEMORY.md              # Learned knowledge
-├── TOOLS.md               # Tool guidance
-└── skills/
-    ├── problem-modeling/
-    │   └── SKILL.md
-    ├── azure-ops/
-    │   └── SKILL.md
-    ├── powershell-automation/
-    │   └── SKILL.md
-    ├── incident-response/
-    │   └── SKILL.md
-    ├── contrastive-scoring/
-    │   └── SKILL.md
-    └── verify-response/
-        └── SKILL.md
+> What's the PowerShell to list all resource groups with their tags?
 ```
 
-## After It's Running
+**Complex:**
+```
+> I need to migrate our Key Vault secrets to a new vault in a different region.
+> Think through this carefully.
+```
 
-Talk to your assistant via Slack/Discord. Test with:
-1. Simple: "List all Azure resource groups"
-2. Complex: "Help me plan a Key Vault migration - think through this carefully"
-3. Incident: "Alert: Database CPU spiking"
+**Incident:**
+```
+> Alert: SQL database CPU at 95% on the East production server. Help me investigate.
+```
 
-The system will route simple requests directly, and use problem-modeling for complex ones.
+**Comparison:**
+```
+> Should I use a managed identity or service principal for our new app service
+> to access Key Vault? Compare the approaches.
+```
+
+---
+
+## How Skills Work
+
+Skills are markdown files in `workspace/skills/`. Claude Code reads them on-demand when a request matches. You don't trigger them manually - the routing in `CLAUDE.md` handles it.
+
+| Skill | Triggers on |
+|-------|------------|
+| `problem-modeling` | Complex, ambiguous, multi-step problems |
+| `azure-ops` | Azure infrastructure operations |
+| `powershell-automation` | Script generation, automation tasks |
+| `incident-response` | Alerts, outages, production issues |
+| `contrastive-scoring` | "Which approach?", comparing options |
+| `verify-response` | Self-check before high-stakes responses |
+
+---
+
+## Memory & Learning
+
+`workspace/MEMORY.md` stores persistent knowledge:
+- Your environment details (subscription IDs, resource groups, servers)
+- Patterns that work in your specific setup
+- Solutions from past problems
+- Things that failed and why
+
+The assistant updates this file as it learns. You can also edit it directly.
+
+---
+
+## Customization
+
+### Add a new skill
+```bash
+mkdir workspace/skills/your-skill-name
+```
+
+Create `SKILL.md` with YAML frontmatter:
+```markdown
+---
+name: your-skill-name
+description: What this skill does
+triggers:
+  - keyword1
+  - keyword2
+---
+
+# Skill content here
+```
+
+Then add a routing entry in `CLAUDE.md` under "Domain-Specific Routing".
+
+### Adjust personality
+Edit the "Identity & Personality" section in `CLAUDE.md`.
+
+### Add domain rules
+Add rules under "Domain Rules" in `CLAUDE.md`.
+
+---
+
+## Keeping It Updated
+
+```bash
+cd ~/SteinBot
+git add -A && git commit -m "Update memory and skills"
+git push
+```
+
+This lets you version-control your assistant's knowledge and sync it across machines.
+
+---
+
+## File Structure
+
+```
+SteinBot/
+├── CLAUDE.md                              # Brain - loaded every session
+├── HOW-TO-USE.md                          # This file
+├── .gitignore
+└── workspace/
+    ├── SOUL.md                            # Personality reference
+    ├── AGENTS.md                          # Behavior rules reference
+    ├── MEMORY.md                          # Persistent knowledge (grows over time)
+    ├── TOOLS.md                           # Tool safety rules
+    └── skills/
+        ├── problem-modeling/SKILL.md      # UPSA methodology
+        ├── azure-ops/SKILL.md             # Azure patterns
+        ├── powershell-automation/SKILL.md # Script templates
+        ├── incident-response/SKILL.md     # Incident procedures
+        ├── contrastive-scoring/SKILL.md   # Approach comparison
+        └── verify-response/SKILL.md       # Self-verification
+```

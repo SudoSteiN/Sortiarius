@@ -13,8 +13,7 @@ credentials.json
 node_modules/
 package-lock.json
 
-# OpenClaw runtime
-.openclaw-cache/
+# Runtime
 *.log
 
 # OS files
