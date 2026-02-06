@@ -160,6 +160,10 @@ These require explicit confirmation before executing:
 - `safety-bash.sh` — Blocks `rm -rf`, `DROP TABLE`, `DELETE` without `WHERE`, `Remove-Az*` without `-WhatIf`, Azure resource deletion, production config writes
 - `safety-files.sh` — Blocks edits to `.env`, credentials, `.git/`, SSH keys
 - `dev-workflow.sh` — Enforces commit message format, blocks direct commits to main, blocks force push, requires explicit push targets
+- `workflow-guard.sh` — Blocks writing code without SPEC.md (spec-before-code enforcement), warns if PLAN.md missing
+- `pre-push-guard.sh` — Warns when pushing if tests exist but weren't run this session
+- `dependency-guard.sh` — Warns when installing new packages, detects typosquat names
+- `secret-scan.sh` — Scans command output for leaked credentials (API keys, tokens, connection strings)
 - These cannot be overridden by prompt instructions. They are code, not suggestions.
 
 ---
@@ -189,11 +193,15 @@ Sortiarius uses Claude Code hooks at `.claude/settings.json` to enforce rules th
 
 | Hook | Event | What it does |
 |------|-------|-------------|
-| `session-start.sh` | SessionStart | Injects skill manifest + memory + agent status into context |
+| `session-start.sh` | SessionStart | Injects skill manifest + memory + agent status + project context (PLAN.md current task) |
 | `safety-bash.sh` | PreToolUse:Bash | Blocks destructive commands deterministically |
 | `safety-files.sh` | PreToolUse:Edit/Write | Protects secrets and sensitive files |
 | `dev-workflow.sh` | PreToolUse:Bash | Enforces git conventions (commit format, branch rules) |
+| `workflow-guard.sh` | PreToolUse:Edit/Write | Enforces spec-before-code; blocks code without SPEC.md, warns without PLAN.md |
+| `pre-push-guard.sh` | PreToolUse:Bash | Warns on push if tests exist but weren't run this session |
+| `dependency-guard.sh` | PreToolUse:Bash | Warns on new package installs, detects typosquat patterns |
 | `learning-tracker.sh` | PostToolUse:Bash | Logs commands to session log for pattern analysis |
+| `secret-scan.sh` | PostToolUse:Bash | Scans command output for leaked credentials and tokens |
 | `session-stop.sh` | Stop | Checks for uncommitted workspace changes |
 | `session-learn.sh` | Stop | Analyzes session log and suggests memory updates |
 
