@@ -26,6 +26,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Python
+__pycache__/
+*.pyc
+
 # Workspace scratch/temp (never commit)
 workspace/scratch/
 workspace/tmp/
