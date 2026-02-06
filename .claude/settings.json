@@ -22,6 +22,12 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/safety-bash.sh",
             "timeout": 5,
             "statusMessage": "Safety check..."
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dev-workflow.sh",
+            "timeout": 5,
+            "statusMessage": "Workflow check..."
           }
         ]
       },
