@@ -1,0 +1,574 @@
+#!/usr/bin/env bash
+# sortiarius - Launch Sortiarius (Claude Code with global context)
+#
+# Usage:
+#   sortiarius                    Open Sortiarius in current directory
+#   sortiarius new <name>         Create new project and open Sortiarius in it
+#   sortiarius home               Open Sortiarius in ~/Sortiarius (manage skills/memory)
+#   sortiarius memory [file]      Edit memory file directly (default: index.md)
+#   sortiarius sync               Commit and push workspace changes (with diff preview)
+#   sortiarius doctor             Check framework health
+#   sortiarius skill new <name>   Scaffold a new skill
+#   sortiarius skill list         List all skills with their triggers
+#   sortiarius agent <cmd>        Launch autonomous Claude agents
+#   sortiarius list               List all projects
+#   sortiarius update             Pull latest Sortiarius from git
+#   sortiarius uninstall          Remove global config (keeps repo)
+#   sortiarius <path>             Open Sortiarius in a specific directory
+
+set -euo pipefail
+
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
+PROJECTS_DIR="${SORTIARIUS_PROJECTS:-$HOME/projects}"
+
+# --- Helpers ---
+
+die() { echo "error: $*" >&2; exit 1; }
+
+check_claude() {
+  command -v claude >/dev/null 2>&1 || die "claude CLI not found. Install: https://docs.anthropic.com/en/docs/claude-code"
+}
+
+check_git() {
+  command -v git >/dev/null 2>&1 || die "git not found. Install git first."
+}
+
+check_sortiarius_home() {
+  [ -d "$SORTIARIUS_HOME" ] || die "Sortiarius home not found at $SORTIARIUS_HOME. Set SORTIARIUS_HOME or clone the repo there."
+  [ -f "$SORTIARIUS_HOME/CLAUDE.md" ] || die "CLAUDE.md not found in $SORTIARIUS_HOME. Is this the right repo?"
+}
+
+# Cross-platform sed -i (macOS vs Linux)
+portable_sed_i() {
+  if sed --version >/dev/null 2>&1; then
+    # GNU sed (Linux)
+    sed -i "$@"
+  else
+    # BSD sed (macOS)
+    sed -i '' "$@"
+  fi
+}
+
+# --- Commands ---
+
+cmd_default() {
+  check_claude
+  exec claude
+}
+
+cmd_home() {
+  check_claude
+  check_sortiarius_home
+  cd "$SORTIARIUS_HOME"
+  exec claude
+}
+
+cmd_memory() {
+  check_sortiarius_home
+  local memory_dir="$SORTIARIUS_HOME/workspace/memory"
+  local target="${1:-}"
+
+  if [ -z "$target" ]; then
+    # No argument: open index.md
+    "${EDITOR:-vim}" "$memory_dir/index.md"
+  elif [ -f "$memory_dir/$target" ]; then
+    "${EDITOR:-vim}" "$memory_dir/$target"
+  elif [ -f "$memory_dir/${target}.md" ]; then
+    "${EDITOR:-vim}" "$memory_dir/${target}.md"
+  else
+    echo "Available memory files:"
+    for f in "$memory_dir"/*.md; do
+      [ -f "$f" ] || continue
+      echo "  $(basename "$f" .md)"
+    done
+    die "Unknown memory file: $target"
+  fi
+}
+
+cmd_sync() {
+  check_git
+  check_sortiarius_home
+  cd "$SORTIARIUS_HOME"
+
+  local sync_all=false
+  if [ "${1:-}" = "--all" ]; then
+    sync_all=true
+  fi
+
+  local target="workspace/"
+  if [ "$sync_all" = true ]; then
+    target="."
+  fi
+
+  # Check for untracked files in workspace
+  local untracked
+  untracked="$(git ls-files --others --exclude-standard "$target" 2>/dev/null)"
+
+  if git diff --quiet "$target" 2>/dev/null && git diff --cached --quiet "$target" 2>/dev/null && [ -z "$untracked" ]; then
+    echo "No workspace changes to sync."
+    return 0
+  fi
+
+  # Show what will be committed
+  echo "Changes to sync:"
+  echo ""
+  git diff --stat "$target" 2>/dev/null
+  if [ -n "$untracked" ]; then
+    echo ""
+    echo "New files:"
+    echo "$untracked" | while read -r f; do echo "  $f"; done
+  fi
+  echo ""
+
+  # Confirm before committing
+  read -rp "Commit these changes? [Y/n] " confirm
+  if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
+    echo "Cancelled."
+    return 0
+  fi
+
+  git add "$target"
+  git commit -m "Sync workspace - $(date '+%Y-%m-%d %H:%M')"
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    if git push; then
+      echo "Synced and pushed."
+    else
+      echo "Committed locally but push failed. Run 'git push' manually when ready."
+    fi
+  else
+    echo "Committed locally. No remote configured."
+  fi
+}
+
+cmd_doctor() {
+  check_sortiarius_home
+  local issues=0
+
+  echo "=== Sortiarius Health Check ==="
+  echo ""
+
+  # Check symlink
+  echo "Checking global symlink..."
+  if [ -L "$HOME/.claude/CLAUDE.md" ]; then
+    local target
+    target="$(readlink "$HOME/.claude/CLAUDE.md" 2>/dev/null || echo "unknown")"
+    if [ -f "$HOME/.claude/CLAUDE.md" ]; then
+      echo "  [ok] ~/.claude/CLAUDE.md → $target"
+    else
+      echo "  [FAIL] Symlink exists but target is broken: $target"
+      issues=$((issues + 1))
+    fi
+  else
+    echo "  [FAIL] ~/.claude/CLAUDE.md is not a symlink. Run setup.sh"
+    issues=$((issues + 1))
+  fi
+
+  # Check CLAUDE.md exists
+  echo "Checking CLAUDE.md..."
+  if [ -f "$SORTIARIUS_HOME/CLAUDE.md" ]; then
+    echo "  [ok] CLAUDE.md found"
+  else
+    echo "  [FAIL] CLAUDE.md missing from $SORTIARIUS_HOME"
+    issues=$((issues + 1))
+  fi
+
+  # Check skills have valid frontmatter
+  echo "Checking skills..."
+  local skill_count=0
+  for skill_dir in "$SORTIARIUS_HOME/workspace/skills"/*/; do
+    [ -d "$skill_dir" ] || continue
+    local skill_file="$skill_dir/SKILL.md"
+    local skill_name
+    skill_name="$(basename "$skill_dir")"
+
+    if [ ! -f "$skill_file" ]; then
+      echo "  [FAIL] $skill_name/ exists but has no SKILL.md"
+      issues=$((issues + 1))
+      continue
+    fi
+
+    # Check for YAML frontmatter with required fields
+    if ! head -1 "$skill_file" | grep -q "^---"; then
+      echo "  [FAIL] $skill_name/SKILL.md missing YAML frontmatter"
+      issues=$((issues + 1))
+      continue
+    fi
+
+    if ! grep -q "^name:" "$skill_file"; then
+      echo "  [FAIL] $skill_name/SKILL.md missing 'name:' field"
+      issues=$((issues + 1))
+    elif ! grep -q "^triggers:" "$skill_file"; then
+      echo "  [FAIL] $skill_name/SKILL.md missing 'triggers:' field"
+      issues=$((issues + 1))
+    else
+      local trigger_count
+      trigger_count="$(awk '/^triggers:/{found=1; next} found && /^  - /{count++; next} found{exit} END{print count+0}' "$skill_file")"
+      echo "  [ok] $skill_name ($trigger_count triggers)"
+    fi
+    skill_count=$((skill_count + 1))
+  done
+
+  if [ "$skill_count" -eq 0 ]; then
+    echo "  [WARN] No skills found"
+  fi
+
+  # Check memory files
+  echo "Checking memory..."
+  local memory_dir="$SORTIARIUS_HOME/workspace/memory"
+  if [ -d "$memory_dir" ]; then
+    local mem_count=0
+    for mf in "$memory_dir"/*.md; do
+      [ -f "$mf" ] || continue
+      mem_count=$((mem_count + 1))
+    done
+    if [ "$mem_count" -eq 0 ]; then
+      echo "  [WARN] Memory directory exists but has no .md files"
+    else
+      echo "  [ok] $mem_count memory files"
+    fi
+    if [ ! -f "$memory_dir/index.md" ]; then
+      echo "  [WARN] memory/index.md missing (recommended)"
+    fi
+  else
+    echo "  [FAIL] Memory directory not found at $memory_dir"
+    issues=$((issues + 1))
+  fi
+
+  # Check git remote
+  echo "Checking git..."
+  if [ -d "$SORTIARIUS_HOME/.git" ]; then
+    echo "  [ok] Git repo initialized"
+    if git -C "$SORTIARIUS_HOME" remote get-url origin >/dev/null 2>&1; then
+      echo "  [ok] Remote 'origin' configured"
+    else
+      echo "  [WARN] No git remote configured"
+    fi
+  else
+    echo "  [WARN] Not a git repository"
+  fi
+
+  # Check sortiarius is in PATH
+  echo "Checking PATH..."
+  if command -v sortiarius >/dev/null 2>&1; then
+    echo "  [ok] sortiarius command in PATH"
+  else
+    echo "  [WARN] sortiarius not in PATH (may need to source shell profile)"
+  fi
+
+  # Check claude CLI
+  echo "Checking prerequisites..."
+  if command -v claude >/dev/null 2>&1; then
+    echo "  [ok] claude CLI found"
+  else
+    echo "  [WARN] claude CLI not found"
+  fi
+
+  # Check hooks
+  echo "Checking hooks..."
+  local hooks_settings="$SORTIARIUS_HOME/.claude/settings.json"
+  if [ -f "$hooks_settings" ]; then
+    if jq empty "$hooks_settings" 2>/dev/null; then
+      local hook_count
+      hook_count="$(jq '[.hooks | to_entries[] | .value[].hooks[]] | length' "$hooks_settings" 2>/dev/null || echo 0)"
+      echo "  [ok] settings.json valid ($hook_count hooks configured)"
+    else
+      echo "  [FAIL] settings.json has invalid JSON"
+      issues=$((issues + 1))
+    fi
+  else
+    echo "  [WARN] No .claude/settings.json found (no hooks active)"
+  fi
+
+  local hooks_dir="$SORTIARIUS_HOME/.claude/hooks"
+  if [ -d "$hooks_dir" ]; then
+    local hook_scripts=0
+    local non_exec=0
+    for hf in "$hooks_dir"/*.sh; do
+      [ -f "$hf" ] || continue
+      hook_scripts=$((hook_scripts + 1))
+      if [ ! -x "$hf" ]; then
+        echo "  [FAIL] $(basename "$hf") is not executable"
+        issues=$((issues + 1))
+        non_exec=$((non_exec + 1))
+      fi
+    done
+    if [ "$non_exec" -eq 0 ] && [ "$hook_scripts" -gt 0 ]; then
+      echo "  [ok] $hook_scripts hook scripts, all executable"
+    fi
+  else
+    echo "  [WARN] No .claude/hooks/ directory"
+  fi
+
+  # Check agent launcher
+  echo "Checking agents..."
+  if [ -x "$SORTIARIUS_HOME/bin/sortiarius-agent" ]; then
+    echo "  [ok] sortiarius-agent launcher found"
+  else
+    echo "  [WARN] sortiarius-agent not found or not executable"
+  fi
+
+  echo ""
+  if [ "$issues" -eq 0 ]; then
+    echo "All checks passed."
+  else
+    echo "$issues issue(s) found. Fix them above."
+  fi
+  return "$issues"
+}
+
+cmd_skill() {
+  local subcmd="${1:-}"
+  case "$subcmd" in
+    new)  cmd_skill_new "${2:-}" ;;
+    list|ls) cmd_skill_list ;;
+    *)    die "Usage: sortiarius skill [new <name> | list]" ;;
+  esac
+}
+
+cmd_skill_new() {
+  local skill_name="${1:-}"
+  [ -n "$skill_name" ] || die "Usage: sortiarius skill new <skill-name>"
+
+  check_sortiarius_home
+
+  local skill_dir="$SORTIARIUS_HOME/workspace/skills/$skill_name"
+
+  if [ -d "$skill_dir" ]; then
+    die "Skill '$skill_name' already exists at $skill_dir"
+  fi
+
+  mkdir -p "$skill_dir"
+  cat > "$skill_dir/SKILL.md" << SKILL_EOF
+---
+name: $skill_name
+description: TODO - describe what this skill does
+triggers:
+  - TODO_trigger1
+  - TODO_trigger2
+pipeline: []
+---
+
+# ${skill_name} Skill
+
+## When to Use
+<!-- Describe when this skill should be activated -->
+
+## Process
+<!-- Step-by-step instructions for the AI to follow -->
+
+## Templates
+<!-- Reusable templates, commands, or code patterns -->
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->
+SKILL_EOF
+
+  echo "Created skill: $skill_dir/SKILL.md"
+  echo "Next steps:"
+  echo "  1. Edit $skill_dir/SKILL.md"
+  echo "  2. Update the description, triggers, and content"
+  echo "  3. Run 'sortiarius sync' to commit"
+}
+
+cmd_skill_list() {
+  check_sortiarius_home
+
+  echo "Skills in $SORTIARIUS_HOME/workspace/skills/:"
+  echo ""
+
+  local found=0
+  for skill_dir in "$SORTIARIUS_HOME/workspace/skills"/*/; do
+    [ -d "$skill_dir" ] || continue
+    local skill_file="$skill_dir/SKILL.md"
+    local name
+    name="$(basename "$skill_dir")"
+    found=1
+
+    if [ ! -f "$skill_file" ]; then
+      echo "  $name  (no SKILL.md!)"
+      continue
+    fi
+
+    # Extract description from frontmatter
+    local desc
+    desc="$(awk '/^description:/{gsub(/^description: */, ""); print; exit}' "$skill_file")"
+
+    # Extract triggers from YAML frontmatter
+    local triggers
+    triggers="$(awk '/^triggers:/{found=1; next} found && /^  - /{gsub(/^  - /, ""); printf "%s, ", $0; next} found{exit}' "$skill_file" | sed 's/, $//')"
+
+    echo "  $name"
+    [ -n "$desc" ] && echo "    $desc"
+    [ -n "$triggers" ] && echo "    triggers: $triggers"
+    echo ""
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "  (none - create one with: sortiarius skill new <name>)"
+  fi
+}
+
+cmd_new() {
+  local project_name="${1:-}"
+  [ -n "$project_name" ] || die "Usage: sortiarius new <project-name>"
+
+  check_claude
+  check_git
+  check_sortiarius_home
+
+  local project_dir="$PROJECTS_DIR/$project_name"
+
+  if [ -d "$project_dir" ]; then
+    echo "Project $project_dir already exists. Opening it."
+    cd "$project_dir"
+    exec claude
+  fi
+
+  mkdir -p "$project_dir"
+  cd "$project_dir"
+  git init
+
+  # Create project-local CLAUDE.md
+  cat > CLAUDE.md << PROJ_EOF
+# Project: $project_name
+
+## Project Context
+<!-- Add project-specific instructions here -->
+<!-- Sortiarius global identity, skills, and rules still apply via ~/.claude/CLAUDE.md -->
+
+## Tech Stack
+<!-- e.g., Language, framework, database, hosting -->
+
+## Key Files
+<!-- List important files Claude should know about -->
+
+## Project Rules
+<!-- Any project-specific conventions or constraints -->
+PROJ_EOF
+
+  git add CLAUDE.md
+  git commit -m "Initialize $project_name with Sortiarius project template"
+
+  echo "Created $project_dir"
+  echo "Opening Sortiarius..."
+  exec claude
+}
+
+cmd_list() {
+  if [ ! -d "$PROJECTS_DIR" ]; then
+    echo "No projects directory at $PROJECTS_DIR"
+    return 0
+  fi
+
+  echo "Projects in $PROJECTS_DIR:"
+  echo ""
+  local found=0
+  for dir in "$PROJECTS_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    found=1
+    local name
+    name="$(basename "$dir")"
+    if [ -f "$dir/CLAUDE.md" ]; then
+      echo "  $name  (has CLAUDE.md)"
+    else
+      echo "  $name"
+    fi
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "  (none yet - create one with: sortiarius new <name>)"
+  fi
+}
+
+cmd_update() {
+  check_git
+  check_sortiarius_home
+  cd "$SORTIARIUS_HOME"
+
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    die "No git remote configured in $SORTIARIUS_HOME"
+  fi
+
+  local branch
+  branch="$(git branch --show-current)"
+  echo "Pulling latest Sortiarius ($branch)..."
+  git pull origin "$branch"
+  echo "Updated."
+}
+
+cmd_uninstall() {
+  echo "This will remove Sortiarius global configuration:"
+  echo "  - Remove symlink at ~/.claude/CLAUDE.md"
+  echo "  - The repo at $SORTIARIUS_HOME will NOT be deleted"
+  echo ""
+  read -rp "Continue? [y/N] " confirm
+  [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "Cancelled."; exit 0; }
+
+  # Remove symlink
+  if [ -L "$HOME/.claude/CLAUDE.md" ]; then
+    rm "$HOME/.claude/CLAUDE.md"
+    echo "Removed ~/.claude/CLAUDE.md symlink"
+  fi
+
+  # Restore backup if exists
+  if [ -f "$HOME/.claude/CLAUDE.md.bak" ]; then
+    mv "$HOME/.claude/CLAUDE.md.bak" "$HOME/.claude/CLAUDE.md"
+    echo "Restored previous ~/.claude/CLAUDE.md from backup"
+  fi
+
+  echo ""
+  echo "Done. Sortiarius global config removed."
+  echo "To also remove from PATH, edit your shell profile and remove the Sortiarius lines."
+  echo "The repo at $SORTIARIUS_HOME is still intact."
+}
+
+cmd_help() {
+  echo "sortiarius - Sortiarius personal AI assistant launcher"
+  echo ""
+  echo "Usage:"
+  echo "  sortiarius                    Open Sortiarius in current directory"
+  echo "  sortiarius new <name>         Create new project at ~/projects/<name>"
+  echo "  sortiarius home               Open Sortiarius home (manage skills/memory)"
+  echo "  sortiarius memory [file]      Edit memory file in \$EDITOR (default: index)"
+  echo "  sortiarius sync [--all]       Commit and push workspace changes (with preview)"
+  echo "  sortiarius doctor             Check framework health"
+  echo "  sortiarius skill new <name>   Scaffold a new skill"
+  echo "  sortiarius skill list         List all skills with triggers"
+  echo "  sortiarius agent <cmd>        Launch autonomous Claude agents (run/bg/parallel/status/digest)"
+  echo "  sortiarius list               List all projects"
+  echo "  sortiarius update             Pull latest Sortiarius from git"
+  echo "  sortiarius uninstall          Remove global config (keeps repo)"
+  echo "  sortiarius <path>             Open Sortiarius in specific directory"
+  echo ""
+  echo "Environment:"
+  echo "  SORTIARIUS_HOME        Sortiarius repo location (default: ~/Sortiarius)"
+  echo "  SORTIARIUS_PROJECTS    Projects directory (default: ~/projects)"
+  echo "  EDITOR                 Editor for 'sortiarius memory' (default: vim)"
+}
+
+# --- Main ---
+
+case "${1:-}" in
+  "")          cmd_default ;;
+  home)        cmd_home ;;
+  memory)      cmd_memory "${2:-}" ;;
+  sync)        cmd_sync "${2:-}" ;;
+  doctor)      cmd_doctor ;;
+  skill)       cmd_skill "${2:-}" "${3:-}" ;;
+  agent)       shift; exec "$SORTIARIUS_HOME/bin/sortiarius-agent" "$@" ;;
+  new)         cmd_new "${2:-}" ;;
+  list|ls)     cmd_list ;;
+  update)      cmd_update ;;
+  uninstall)   cmd_uninstall ;;
+  help|--help|-h) cmd_help ;;
+  *)
+    if [ -d "$1" ]; then
+      check_claude
+      cd "$1"
+      exec claude
+    else
+      die "Not a directory: $1 (run 'sortiarius help' for usage)"
+    fi
+    ;;
+esac

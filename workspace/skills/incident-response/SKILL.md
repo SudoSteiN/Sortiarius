@@ -8,6 +8,7 @@ triggers:
   - alert
   - pages
   - emergency
+pipeline: []
 ---
 
 # Incident Response Skill
@@ -65,3 +66,6 @@ Get-AzActivityLog -ResourceGroupName "RG-NAME" -StartTime (Get-Date).AddHours(-2
 - Identify root cause
 - Create action items
 - Update runbooks if needed
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

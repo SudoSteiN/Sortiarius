@@ -25,3 +25,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Workspace scratch/temp (never commit)
+workspace/scratch/
+workspace/tmp/

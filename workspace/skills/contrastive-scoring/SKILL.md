@@ -6,6 +6,8 @@ triggers:
   - which approach
   - compare solutions
   - trade-offs
+pipeline:
+  - problem-modeling
 ---
 
 # Contrastive Scoring Skill
@@ -54,3 +56,6 @@ Trade-off accepted: [What we're giving up]
 If approaches are within 10% of each other:
 - Default to simpler option
 - Or ask Justin for preference
+
+## Changelog
+<!-- One-line entries: YYYY-MM-DD description -->

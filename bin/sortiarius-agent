@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+# sortiarius-agent - Launch autonomous Claude Code agents for parallel work
+#
+# This is the core of Sortiarius's "intelligent system" — the ability to
+# spawn Claude instances that work independently and report back.
+#
+# Usage:
+#   sortiarius agent run <prompt>              Run a one-shot agent with a prompt
+#   sortiarius agent run -f <file>             Run agent with prompt from file
+#   sortiarius agent bg <prompt>               Run agent in background, get output file
+#   sortiarius agent parallel <file>           Run multiple agents from a task file
+#   sortiarius agent status                    Check background agent status
+#   sortiarius agent review <output-dir>       Review completed agent outputs
+#   sortiarius agent digest                    Analyze session logs and generate insights
+#
+# Background agents write output to ~/Sortiarius/workspace/scratch/agents/
+
+set -euo pipefail
+
+SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
+AGENTS_DIR="$SORTIARIUS_HOME/workspace/scratch/agents"
+SKILLS_DIR="$SORTIARIUS_HOME/workspace/skills"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+check_claude() {
+  command -v claude >/dev/null 2>&1 || die "claude CLI not found"
+}
+
+ensure_dirs() {
+  mkdir -p "$AGENTS_DIR"
+}
+
+# Build a context preamble that gives agents Sortiarius's identity
+build_preamble() {
+  local task_type="${1:-general}"
+  cat << 'PREAMBLE'
+You are Sortiarius, an autonomous agent instance. You are running as a background worker — there is no interactive user.
+Execute the task below completely, then stop. Be thorough but concise in your output.
+Write results to stdout. If you need to save files, save them to the current working directory.
+PREAMBLE
+
+  # Inject relevant skill context based on task type
+  if [ "$task_type" != "general" ] && [ -f "$SKILLS_DIR/$task_type/SKILL.md" ]; then
+    echo ""
+    echo "--- Relevant skill context ---"
+    cat "$SKILLS_DIR/$task_type/SKILL.md"
+    echo "--- End skill context ---"
+    echo ""
+  fi
+}
+
+# Detect which skill domain a prompt belongs to
+detect_domain() {
+  local prompt="$1"
+  local prompt_lower
+  prompt_lower="$(echo "$prompt" | tr '[:upper:]' '[:lower:]')"
+
+  if echo "$prompt_lower" | grep -qE 'azure|resource group|key vault|app service|vm|virtual machine'; then
+    echo "azure-ops"
+  elif echo "$prompt_lower" | grep -qE 'powershell|script|automate|automation'; then
+    echo "powershell-automation"
+  elif echo "$prompt_lower" | grep -qE 'incident|outage|alert|emergency|production issue'; then
+    echo "incident-response"
+  elif echo "$prompt_lower" | grep -qE 'compare|which approach|trade-off|options'; then
+    echo "contrastive-scoring"
+  else
+    echo "general"
+  fi
+}
+
+# --- Commands ---
+
+cmd_run() {
+  check_claude
+  ensure_dirs
+
+  local prompt=""
+  local from_file=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--file) from_file="$2"; shift 2 ;;
+      *) prompt="$*"; break ;;
+    esac
+  done
+
+  if [ -n "$from_file" ]; then
+    [ -f "$from_file" ] || die "File not found: $from_file"
+    prompt="$(cat "$from_file")"
+  fi
+
+  [ -n "$prompt" ] || die "Usage: sortiarius agent run <prompt> or sortiarius agent run -f <file>"
+
+  local domain
+  domain="$(detect_domain "$prompt")"
+  local preamble
+  preamble="$(build_preamble "$domain")"
+
+  local full_prompt="${preamble}
+
+Task: ${prompt}"
+
+  echo "Running agent (domain: $domain)..."
+  claude --print -p "$full_prompt"
+}
+
+cmd_bg() {
+  check_claude
+  ensure_dirs
+
+  local prompt="$*"
+  [ -n "$prompt" ] || die "Usage: sortiarius agent bg <prompt>"
+
+  local domain
+  domain="$(detect_domain "$prompt")"
+  local preamble
+  preamble="$(build_preamble "$domain")"
+
+  local timestamp
+  timestamp="$(date '+%Y%m%d-%H%M%S')"
+  local agent_id="${timestamp}-$$"
+  local output_dir="$AGENTS_DIR/$agent_id"
+  mkdir -p "$output_dir"
+
+  local full_prompt="${preamble}
+
+Task: ${prompt}"
+
+  # Save the prompt for reference
+  echo "$prompt" > "$output_dir/prompt.txt"
+  echo "$domain" > "$output_dir/domain.txt"
+  echo "running" > "$output_dir/status.txt"
+  date '+%Y-%m-%d %H:%M:%S' > "$output_dir/started.txt"
+
+  # Launch Claude in the background
+  (
+    claude --print -p "$full_prompt" > "$output_dir/output.txt" 2> "$output_dir/error.txt"
+    echo "$?" > "$output_dir/exit_code.txt"
+    echo "completed" > "$output_dir/status.txt"
+    date '+%Y-%m-%d %H:%M:%S' > "$output_dir/completed.txt"
+  ) &
+
+  local pid=$!
+  echo "$pid" > "$output_dir/pid.txt"
+
+  echo "Agent launched: $agent_id (PID: $pid)"
+  echo "Output: $output_dir/output.txt"
+  echo "Check status: sortiarius agent status"
+}
+
+cmd_parallel() {
+  check_claude
+  ensure_dirs
+
+  local task_file="${1:-}"
+  [ -n "$task_file" ] || die "Usage: sortiarius agent parallel <task-file>"
+  [ -f "$task_file" ] || die "File not found: $task_file"
+
+  local batch_id
+  batch_id="batch-$(date '+%Y%m%d-%H%M%S')"
+  local batch_dir="$AGENTS_DIR/$batch_id"
+  mkdir -p "$batch_dir"
+
+  echo "Launching parallel agents from $task_file..."
+  echo ""
+
+  local count=0
+  local pids=""
+
+  while IFS= read -r line; do
+    # Skip empty lines and comments
+    [ -z "$line" ] && continue
+    echo "$line" | grep -q '^#' && continue
+
+    count=$((count + 1))
+    local agent_dir="$batch_dir/task-$count"
+    mkdir -p "$agent_dir"
+
+    local domain
+    domain="$(detect_domain "$line")"
+    local preamble
+    preamble="$(build_preamble "$domain")"
+
+    echo "$line" > "$agent_dir/prompt.txt"
+    echo "$domain" > "$agent_dir/domain.txt"
+    echo "running" > "$agent_dir/status.txt"
+
+    (
+      claude --print -p "${preamble}
+
+Task: ${line}" > "$agent_dir/output.txt" 2> "$agent_dir/error.txt"
+      echo "$?" > "$agent_dir/exit_code.txt"
+      echo "completed" > "$agent_dir/status.txt"
+    ) &
+
+    local pid=$!
+    echo "$pid" > "$agent_dir/pid.txt"
+    pids="$pids $pid"
+    echo "  [$count] (PID $pid, domain: $domain) $line"
+
+  done < "$task_file"
+
+  echo ""
+  echo "Launched $count agents in parallel."
+  echo "Batch: $batch_dir"
+  echo ""
+  echo "Waiting for all agents to complete..."
+
+  # Wait for all background jobs
+  local failed=0
+  for pid in $pids; do
+    if ! wait "$pid"; then
+      failed=$((failed + 1))
+    fi
+  done
+
+  echo ""
+  echo "All agents complete. $failed failed."
+  echo "Review results: sortiarius agent review $batch_dir"
+}
+
+cmd_status() {
+  ensure_dirs
+
+  echo "=== Agent Status ==="
+  echo ""
+
+  local found=0
+  for agent_dir in "$AGENTS_DIR"/*/; do
+    [ -d "$agent_dir" ] || continue
+    found=1
+
+    local name
+    name="$(basename "$agent_dir")"
+    local status="unknown"
+    [ -f "$agent_dir/status.txt" ] && status="$(cat "$agent_dir/status.txt")"
+
+    local prompt=""
+    [ -f "$agent_dir/prompt.txt" ] && prompt="$(head -1 "$agent_dir/prompt.txt" | cut -c1-60)"
+
+    local pid=""
+    [ -f "$agent_dir/pid.txt" ] && pid="$(cat "$agent_dir/pid.txt")"
+
+    # Check if PID is still running
+    local actual_status="$status"
+    if [ "$status" = "running" ] && [ -n "$pid" ]; then
+      if ! kill -0 "$pid" 2>/dev/null; then
+        actual_status="completed (missed)"
+        echo "completed" > "$agent_dir/status.txt"
+      fi
+    fi
+
+    local icon="?"
+    case "$actual_status" in
+      running) icon=">" ;;
+      completed*) icon="+" ;;
+      failed) icon="!" ;;
+    esac
+
+    echo "  [$icon] $name ($actual_status)"
+    [ -n "$prompt" ] && echo "      $prompt..."
+
+    # Show output preview for completed agents
+    if [ "$actual_status" != "running" ] && [ -f "$agent_dir/output.txt" ]; then
+      local lines
+      lines="$(wc -l < "$agent_dir/output.txt" | tr -d ' ')"
+      echo "      output: $lines lines ($agent_dir/output.txt)"
+    fi
+
+    # Check for batch sub-agents
+    for sub_dir in "$agent_dir"/task-*/; do
+      [ -d "$sub_dir" ] || continue
+      local sub_status="unknown"
+      [ -f "$sub_dir/status.txt" ] && sub_status="$(cat "$sub_dir/status.txt")"
+      local sub_prompt=""
+      [ -f "$sub_dir/prompt.txt" ] && sub_prompt="$(head -1 "$sub_dir/prompt.txt" | cut -c1-50)"
+      echo "    - $(basename "$sub_dir"): $sub_status — $sub_prompt..."
+    done
+
+    echo ""
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "  No agents have been launched yet."
+    echo "  Run: sortiarius agent run <prompt>"
+  fi
+}
+
+cmd_review() {
+  local output_dir="${1:-}"
+
+  if [ -z "$output_dir" ]; then
+    # Review latest agent
+    output_dir="$(ls -dt "$AGENTS_DIR"/*/ 2>/dev/null | head -1)"
+    [ -n "$output_dir" ] || die "No agent outputs found. Run an agent first."
+  fi
+
+  [ -d "$output_dir" ] || die "Directory not found: $output_dir"
+
+  echo "=== Agent Review: $(basename "$output_dir") ==="
+  echo ""
+
+  # Check if it's a batch
+  if ls "$output_dir"/task-*/ >/dev/null 2>&1; then
+    for task_dir in "$output_dir"/task-*/; do
+      [ -d "$task_dir" ] || continue
+      echo "--- $(basename "$task_dir") ---"
+      [ -f "$task_dir/prompt.txt" ] && echo "Prompt: $(cat "$task_dir/prompt.txt")"
+      [ -f "$task_dir/domain.txt" ] && echo "Domain: $(cat "$task_dir/domain.txt")"
+      echo ""
+      if [ -f "$task_dir/output.txt" ]; then
+        cat "$task_dir/output.txt"
+      else
+        echo "(no output)"
+      fi
+      echo ""
+    done
+  else
+    # Single agent
+    [ -f "$output_dir/prompt.txt" ] && echo "Prompt: $(cat "$output_dir/prompt.txt")"
+    [ -f "$output_dir/domain.txt" ] && echo "Domain: $(cat "$output_dir/domain.txt")"
+    [ -f "$output_dir/started.txt" ] && echo "Started: $(cat "$output_dir/started.txt")"
+    [ -f "$output_dir/completed.txt" ] && echo "Completed: $(cat "$output_dir/completed.txt")"
+    echo ""
+    if [ -f "$output_dir/output.txt" ]; then
+      cat "$output_dir/output.txt"
+    else
+      echo "(no output yet — agent may still be running)"
+    fi
+
+    if [ -f "$output_dir/error.txt" ] && [ -s "$output_dir/error.txt" ]; then
+      echo ""
+      echo "--- Errors ---"
+      cat "$output_dir/error.txt"
+    fi
+  fi
+}
+
+cmd_digest() {
+  check_claude
+  ensure_dirs
+
+  local log_file="$SORTIARIUS_HOME/workspace/scratch/session-log.jsonl"
+  [ -f "$log_file" ] || die "No session log found. Run some commands first."
+
+  local line_count
+  line_count="$(wc -l < "$log_file" | tr -d ' ')"
+  echo "Analyzing $line_count logged commands..."
+
+  # Build a summary of the session log
+  local summary
+  summary="$(jq -s '
+    group_by(.domain) |
+    map({
+      domain: .[0].domain,
+      count: length,
+      errors: [.[] | select(.exit_code != "0")] | length,
+      commands: [.[].command] | unique | .[:5]
+    })
+  ' "$log_file" 2>/dev/null)"
+
+  local preamble
+  preamble="$(build_preamble "general")"
+
+  local digest_prompt="${preamble}
+
+Task: Analyze this session command log and generate actionable insights.
+
+Session log summary (grouped by domain):
+$summary
+
+Generate:
+1. Patterns observed (repeated commands, common workflows)
+2. Issues detected (failures, retries, inefficient patterns)
+3. Suggested memory updates (specific entries for the right memory file)
+4. Suggested skill improvements (if any skill should be updated)
+
+Format the output as markdown that can be directly appended to memory files."
+
+  echo ""
+  claude --print -p "$digest_prompt"
+}
+
+# --- Main ---
+
+case "${1:-}" in
+  run)     shift; cmd_run "$@" ;;
+  bg)      shift; cmd_bg "$@" ;;
+  parallel) cmd_parallel "${2:-}" ;;
+  status)  cmd_status ;;
+  review)  cmd_review "${2:-}" ;;
+  digest)  cmd_digest ;;
+  help|--help|-h)
+    echo "sortiarius agent - Autonomous Claude Code agent launcher"
+    echo ""
+    echo "Usage:"
+    echo "  sortiarius agent run <prompt>         Run agent interactively"
+    echo "  sortiarius agent run -f <file>        Run agent with prompt from file"
+    echo "  sortiarius agent bg <prompt>          Run agent in background"
+    echo "  sortiarius agent parallel <file>      Run multiple agents from task file"
+    echo "  sortiarius agent status               Check agent status"
+    echo "  sortiarius agent review [dir]         Review agent output"
+    echo "  sortiarius agent digest               Analyze session logs"
+    echo ""
+    echo "Task file format (for parallel):"
+    echo "  # One task per line"
+    echo "  Generate a PowerShell script to list all Azure VMs"
+    echo "  Analyze our Key Vault access policies"
+    echo "  Write rollback script for database migration"
+    ;;
+  *)       die "Unknown command: ${1:-}. Run 'sortiarius agent help'" ;;
+esac
