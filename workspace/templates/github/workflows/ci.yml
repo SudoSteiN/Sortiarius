@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Uncomment the section for your tech stack:
+
+      # --- Node.js ---
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
+      #     cache: 'npm'
+      # - run: npm ci
+      # - run: npm run lint
+      # - run: npm run build
+      # - run: npm test
+
+      # --- Python ---
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.12'
+      # - run: pip install -r requirements.txt
+      # - run: python -m pytest
+
+      # --- Rust ---
+      # - uses: dtolnay/rust-toolchain@stable
+      # - uses: Swatinem/rust-cache@v2
+      # - run: cargo clippy -- -D warnings
+      # - run: cargo build --release
+      # - run: cargo test
+
+      # --- Rust + WASM ---
+      # - uses: dtolnay/rust-toolchain@stable
+      #   with:
+      #     targets: wasm32-unknown-unknown
+      # - uses: Swatinem/rust-cache@v2
+      # - run: cargo install wasm-pack
+      # - run: wasm-pack build --target web
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
+      #     cache: 'npm'
+      # - run: npm ci
+      # - run: npm run build
+      # - run: npm test
+
+      - run: echo "Configure CI for your tech stack by uncommenting the appropriate section above"

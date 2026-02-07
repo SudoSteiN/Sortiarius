@@ -7,7 +7,7 @@ A personal AI assistant framework that augments [Claude Code](https://docs.anthr
 Sortiarius wraps around Claude Code to add capabilities it doesn't have natively:
 
 - **Persistent memory** — Knowledge split by domain (Azure, PowerShell, database, etc.) that carries across sessions
-- **25 skills** — Autodiscovered via YAML frontmatter triggers, covering everything from product specs to deployment
+- **30 skills** — Autodiscovered via YAML frontmatter triggers, covering everything from product specs to deployment
 - **13 hooks** — Deterministic enforcement that Claude can't override: safety guards, workflow gates, secret scanning, regression tracking
 - **Agent hierarchy** — 3-level system (super agent → project agents → task sub-agents) with persistent registry
 - **Knowledge library** — Cross-project solutions, patterns, and anti-patterns that prevent reinventing the wheel
@@ -48,6 +48,8 @@ sortiarius memory [domain]       # Edit memory (azure, powershell, etc.)
 sortiarius sync                  # Commit workspace changes
 sortiarius doctor                # Health check
 sortiarius ui                    # Launch web dashboard
+sortiarius worktree add <name>   # Create parallel dev worktree
+sortiarius worktree aliases      # Get za/zb/zc aliases for fast switching
 sortiarius agent run "task"      # Spawn autonomous agent
 sortiarius agent parallel file   # Multiple parallel agents
 sortiarius agent status          # Check all agents
@@ -73,7 +75,7 @@ Hooks enforce rules as **code** — Claude can't ignore or bypass them.
 | `session-stop.sh` | Stop | Self-audit, quality gate, workspace check |
 | `session-learn.sh` | Stop | Suggests memory updates from session patterns |
 
-## Skills (25)
+## Skills (30)
 
 Skills are autodiscovered from `workspace/skills/*/SKILL.md`. No routing table — YAML frontmatter `triggers:` handle matching.
 
@@ -81,7 +83,10 @@ Skills are autodiscovered from `workspace/skills/*/SKILL.md`. No routing table �
 `product-spec` · `project-plan` · `architecture` · `full-stack-dev` · `run-and-fix` · `code-review` · `testing` · `integration` · `deployment` · `github-workflow`
 
 **System skills:**
-`orchestrator` · `evaluation` · `coding-agent` · `tmux-orchestration`
+`orchestrator` · `evaluation` · `coding-agent` · `tmux-orchestration` · `worktree-workflow`
+
+**Productivity skills:**
+`self-improve` · `prompt-playbook` · `data-analytics` · `learning-mode`
 
 **Domain skills:**
 `problem-modeling` · `azure-ops` · `powershell-automation` · `incident-response` · `contrastive-scoring` · `verify-response`
@@ -140,7 +145,8 @@ Development loops get clear stop conditions:
 └── workspace/
     ├── memory/                  # Persistent domain knowledge
     ├── knowledge/               # Cross-project solutions library
-    ├── skills/                  # 25 autodiscovered skills
+    ├── templates/               # GitHub templates (PR, issues, CI)
+    ├── skills/                  # 30 autodiscovered skills
     ├── ui/                      # Web dashboard (Python stdlib)
     └── scratch/                 # Session logs, agent registry (gitignored)
 ```

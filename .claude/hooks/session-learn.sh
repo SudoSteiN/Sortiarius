@@ -49,9 +49,23 @@ if [ "$DB_COUNT" -gt 2 ]; then
   LEARN_MSG="${LEARN_MSG}Database operations detected ($DB_COUNT commands). Any incidents or solutions for memory/incidents.md?\n"
 fi
 
+# Check for CLAUDE.md self-improvement opportunities
+# If high error rate, suggest adding rules to prevent repeat mistakes
+if [ "$ERRORS" -gt 0 ] && [ "$TOTAL" -gt 0 ]; then
+  ERROR_RATE=$(( (ERRORS * 100) / TOTAL ))
+  if [ "$ERROR_RATE" -gt 25 ]; then
+    LEARN_MSG="${LEARN_MSG}High error rate (${ERROR_RATE}%) this session. Consider using the self-improve skill to add rules to CLAUDE.md that prevent these mistakes.\n"
+  fi
+fi
+
+# Check if session was long enough to suggest worktree parallelization
+if [ "$TOTAL" -gt 40 ]; then
+  LEARN_MSG="${LEARN_MSG}Long session ($TOTAL commands). Consider using 'sortiarius worktree add' to split independent work into parallel Claude sessions.\n"
+fi
+
 # If substantial session, suggest a memory update
 if [ -n "$LEARN_MSG" ]; then
-  jq -n --arg msg "[Sortiarius Learning Summary — $TOTAL commands this session]\n${LEARN_MSG}Ask Justin if any of this should be persisted to memory." '{
+  jq -n --arg msg "[Sortiarius Learning Summary — $TOTAL commands this session]\n${LEARN_MSG}Reminder: Use self-improve skill to add rules after corrections. Use worktrees for parallel work." '{
     "systemMessage": $msg
   }'
 fi

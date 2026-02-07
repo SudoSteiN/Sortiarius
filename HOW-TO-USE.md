@@ -95,6 +95,11 @@ Layer 2 (Local):   ~/projects/my-app/CLAUDE.md
 | `sortiarius agent digest` | Analyze session logs for patterns |
 | `sortiarius agent cancel <id>` | Stop a running agent |
 | `sortiarius agent cleanup` | Prune dead/completed agents from registry |
+| `sortiarius worktree add <name>` | Create git worktree + branch for parallel Claude session |
+| `sortiarius worktree ls` | List active worktrees |
+| `sortiarius worktree rm <name>` | Remove a worktree |
+| `sortiarius worktree prune` | Clean up stale/merged worktrees |
+| `sortiarius worktree aliases` | Print shell aliases (za, zb, zc) for quick worktree switching |
 | `sortiarius ui [--port N]` | Launch web dashboard (default port 8420) |
 | `sortiarius list` | List all projects in ~/projects/ |
 | `sortiarius update` | Pull latest Sortiarius from git |
@@ -394,7 +399,12 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
     │   ├── session-log.jsonl              # Command log (from learning-tracker hook)
     │   ├── agent-registry.json            # Persistent agent registry
     │   └── agents/                        # Agent output directories
-    └── skills/                            # 25 autodiscovered skills
+    ├── templates/                         # Reusable GitHub templates
+    │   └── github/
+    │       ├── pull_request_template.md   # PR template
+    │       ├── ISSUE_TEMPLATE/            # Bug + feature templates
+    │       └── workflows/ci.yml           # CI workflow (multi-stack)
+    └── skills/                            # 30 autodiscovered skills
         ├── product-spec/SKILL.md          # Requirements gathering (pipeline step 1)
         ├── project-plan/SKILL.md          # Cross-session tracking (step 2)
         ├── architecture/SKILL.md          # Tech stack decisions (step 3)
@@ -404,9 +414,14 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
         ├── testing/SKILL.md               # Test coverage (step 7)
         ├── integration/SKILL.md           # Combine agent outputs (step 8)
         ├── deployment/SKILL.md            # Containerize and ship (step 9)
-        ├── github-workflow/SKILL.md       # Git workflow (step 10)
+        ├── github-workflow/SKILL.md       # Git workflow + Actions + releases (step 10)
         ├── orchestrator/SKILL.md          # Agent hierarchy management
         ├── evaluation/SKILL.md            # Acceptance criteria + stop conditions
+        ├── worktree-workflow/SKILL.md     # Git worktree parallel development
+        ├── self-improve/SKILL.md          # CLAUDE.md self-improvement after corrections
+        ├── prompt-playbook/SKILL.md       # Reusable prompt patterns
+        ├── data-analytics/SKILL.md        # Database querying and data analysis
+        ├── learning-mode/SKILL.md         # Explanations, diagrams, presentations
         ├── coding-agent/SKILL.md          # Parallel agent coordination
         ├── tmux-orchestration/SKILL.md    # Multi-pane terminal orchestration
         ├── problem-modeling/SKILL.md      # UPSA methodology

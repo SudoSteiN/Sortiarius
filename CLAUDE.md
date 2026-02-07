@@ -75,7 +75,9 @@ For day-to-day development on existing projects:
 4. Testing → `~/Sortiarius/workspace/skills/testing/SKILL.md`
 5. Git workflow → `~/Sortiarius/workspace/skills/github-workflow/SKILL.md`
 
-For large tasks, delegate to parallel agents: `~/Sortiarius/workspace/skills/coding-agent/SKILL.md`
+For large tasks, use parallel worktrees (preferred for interactive work) or parallel agents (for batch work):
+- **Worktrees:** `sortiarius worktree add <feature>` — each gets its own Claude session
+- **Agents:** `sortiarius agent parallel tasks.txt` — batch non-interactive tasks
 
 ### Domain-Specific Routing (Autodiscovery)
 Skills are discovered automatically. Do NOT maintain a hardcoded list here.
@@ -90,10 +92,12 @@ Skills are discovered automatically. Do NOT maintain a hardcoded list here.
 
 The context window is a shared resource. Keep it clean:
 
-- **Delegate:** For tasks with 3+ independent sub-tasks, use `sortiarius agent parallel` instead of doing everything in one session
+- **Delegate:** For tasks with 3+ independent sub-tasks, use `sortiarius agent parallel` or `sortiarius worktree add` for parallel Claude sessions
+- **Worktrees:** For independent features, spin up git worktrees — each gets its own Claude session with isolated context
 - **Summarize:** After long operations, summarize the result rather than keeping full output in context
 - **Read on demand:** Only read skill files when triggered, not preemptively
 - **Memory offload:** When you learn something worth keeping, write it to memory files immediately rather than relying on context
+- **Subagents:** Use `Task` tool subagents to offload research, searches, and analysis — keeps main context clean
 
 ---
 
@@ -252,6 +256,61 @@ The session-start hook reports agent status on every session resume so nothing g
 
 ---
 
+## Parallel Development with Worktrees
+
+Git worktrees are the #1 productivity unlock. Each worktree gets its own Claude session with isolated context.
+
+### Quick Start
+```bash
+sortiarius worktree add auth-system       # Create worktree + branch
+sortiarius worktree add payment-flow
+sortiarius worktree aliases               # Get za/zb/zc aliases
+sortiarius worktree ls                    # List active worktrees
+sortiarius worktree prune                 # Clean up merged branches
+```
+
+### When to Use
+- Working on 2+ independent features simultaneously
+- Need to context-switch without losing progress
+- Long-running features that shouldn't block each other
+- Reviewing one feature while building another
+
+### When NOT to Use
+- Features that heavily overlap the same files
+- Quick fixes (< 30 min)
+- When you need shared state between sessions (use sub-agents)
+
+See `~/Sortiarius/workspace/skills/worktree-workflow/SKILL.md` for the full pattern.
+
+---
+
+## Self-Improvement
+
+After corrections, update CLAUDE.md so the same mistake doesn't happen again. See `~/Sortiarius/workspace/skills/self-improve/SKILL.md`.
+
+**Process:**
+1. Justin corrects a mistake or states a preference
+2. Classify: style/preference, technical, process, or domain rule
+3. Formulate a specific, imperative rule
+4. Add to the right location (global CLAUDE.md, project CLAUDE.md, or memory)
+5. Confirm what was added
+
+**Auto-detection:** Watch for "no, do X instead", "always/never do X", "I already told you", "stop doing X".
+
+---
+
+## Prompt Patterns
+
+Reusable prompting patterns for maximum output quality. See `~/Sortiarius/workspace/skills/prompt-playbook/SKILL.md`.
+
+- **Plan first:** Start complex tasks in plan mode. Re-plan if something goes sideways.
+- **Grill mode:** "Grill me on these changes" — deep review before merging
+- **Clean room:** "Knowing everything, scrap this and implement the elegant solution"
+- **Bug squash:** Paste a bug report and say "fix" — don't micromanage
+- **CI fix:** "Go fix the failing CI tests" — autonomous debugging
+
+---
+
 ## Knowledge Library
 
 Cross-project solutions, patterns, and reusable components live at `~/Sortiarius/workspace/knowledge/`:
@@ -309,5 +368,7 @@ After each session, consider:
 - Did a skill trigger correctly? If not, should triggers be updated?
 - Did a new pattern emerge that should become a skill?
 - Should memory files be updated with what was learned?
+- Were there corrections? Use the `self-improve` skill to add rules to CLAUDE.md
 - Did any hook fire incorrectly? Update `.claude/hooks/` if needed.
+- Was the session long (40+ commands)? Next time, use worktrees to split independent work.
 - Run `sortiarius agent digest` periodically to mine session logs for patterns.

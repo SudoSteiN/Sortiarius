@@ -60,6 +60,19 @@ if [ -n "$PROJECT_ROOT" ] && [ "$PROJECT_ROOT" != "$SORTIARIUS_HOME" ]; then
   PROJECT_NAME="$(basename "$PROJECT_ROOT")"
   PROJECT_CONTEXT="Project: $PROJECT_NAME ($PROJECT_ROOT)"
 
+  # Detect if we're in a git worktree (not the main working tree)
+  if git -C "$PROJECT_ROOT" rev-parse --git-common-dir >/dev/null 2>&1; then
+    GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null || echo "")"
+    GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null || echo "")"
+    if [ -n "$GIT_COMMON" ] && [ -n "$GIT_DIR" ] && [ "$GIT_COMMON" != "$GIT_DIR" ] && [ "$GIT_COMMON" != ".git" ]; then
+      WT_BRANCH="$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo "unknown")"
+      WT_MAIN="$(git -C "$PROJECT_ROOT" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
+      PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Worktree: branch=${WT_BRANCH} (main tree: ${WT_MAIN})"
+      WT_COUNT="$(git -C "$PROJECT_ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ')"
+      [ "$WT_COUNT" -gt 1 ] && PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Parallel sessions: ${WT_COUNT} worktrees active"
+    fi
+  fi
+
   # Check SPEC.md
   if [ -f "$PROJECT_ROOT/SPEC.md" ]; then
     SPEC_SUMMARY="$(awk '/^## Problem Statement/{found=1; next} found && /^$/{if(p)exit; next} found && /^##/{exit} found{p=1; print}' "$PROJECT_ROOT/SPEC.md" | head -2)"
