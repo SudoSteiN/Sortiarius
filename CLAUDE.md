@@ -207,11 +207,12 @@ Sortiarius uses Claude Code hooks at `.claude/settings.json` to enforce rules th
 | `workflow-guard.sh` | PreToolUse:Edit/Write | Enforces spec-before-code; blocks code without SPEC.md, warns without PLAN.md |
 | `pre-push-guard.sh` | PreToolUse:Bash | Warns on push if tests exist but weren't run this session |
 | `dependency-guard.sh` | PreToolUse:Bash | Warns on new package installs, detects typosquat patterns |
-| `learning-tracker.sh` | PostToolUse:Bash | Logs commands + context health monitoring (warns at 30/60 ops) |
+| `learning-tracker.sh` | PostToolUse:Bash | Logs commands + stderr + context health monitoring (warns at 30/60 ops) |
 | `secret-scan.sh` | PostToolUse:Bash | Scans command output for leaked credentials and tokens |
+| `memory-detector.sh` | PostToolUse:Bash | Detects memorable events (error-recovery, retry storms, deps, env) → pending-memories.jsonl |
 | `regression-guard.sh` | PostToolUse:Edit/Write | Tracks code modifications, reminds to re-run tests at thresholds |
-| `session-stop.sh` | Stop | Self-audit + quality gate + workspace check + knowledge library reminder |
-| `session-learn.sh` | Stop | Analyzes session log and suggests memory updates |
+| `session-stop.sh` | Stop | Self-audit + quality gate + workspace check (memory nag suppressed when auto-memory active) |
+| `memory-writer.sh` | Stop | Commits pending auto-memories to correct memory files + log rotation + session stats |
 
 If a hook blocks your action, **do not try to work around it**. The block is intentional. Inform Justin what was blocked and why, then ask how to proceed.
 

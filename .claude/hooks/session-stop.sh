@@ -78,16 +78,20 @@ if [ -d "$SORTIARIUS_HOME/.git" ]; then
   fi
 fi
 
-# --- Memory: Check if memory was updated this session ---
-# Uses session-start marker to detect in-session writes (any file under memory/)
+# --- Memory: Check if memory was updated (manually OR via auto-memory) ---
 MEMORY_DIR="$SORTIARIUS_HOME/workspace/memory"
 SESSION_MARKER="$SCRATCH_DIR/.session-start"
+PENDING_MEMORIES="$SCRATCH_DIR/pending-memories.jsonl"
 MEMORY_UPDATED=false
+# Manual memory update check
 if [ -f "$SESSION_MARKER" ] && [ -d "$MEMORY_DIR" ]; then
-  # Check if any memory file is newer than the session start marker
   if find "$MEMORY_DIR" -type f -newer "$SESSION_MARKER" 2>/dev/null | grep -q .; then
     MEMORY_UPDATED=true
   fi
+fi
+# Auto-memory pending entries count as "will be updated" (memory-writer.sh runs after this)
+if [ -f "$PENDING_MEMORIES" ] && [ -s "$PENDING_MEMORIES" ]; then
+  MEMORY_UPDATED=true
 fi
 if ! $MEMORY_UPDATED; then
   MESSAGES="${MESSAGES}Memory hasn't been updated this session. Consider whether anything should be recorded.\n"
@@ -101,7 +105,7 @@ if [ -f "$SESSION_MARKER" ] && [ -f "$KNOWLEDGE_SOLUTIONS" ]; then
     KNOWLEDGE_UPDATED=true
   fi
 fi
-if ! $KNOWLEDGE_UPDATED && [ -f "$SESSION_LOG" ]; then
+if ! $KNOWLEDGE_UPDATED && ! $MEMORY_UPDATED && [ -f "$SESSION_LOG" ]; then
   SESSION_CMDS="$(wc -l < "$SESSION_LOG" 2>/dev/null | tr -d ' ')"
   if [ "$SESSION_CMDS" -gt 20 ]; then
     MESSAGES="${MESSAGES}Significant session ($SESSION_CMDS operations). Consider updating the knowledge library with any reusable solutions.\n"

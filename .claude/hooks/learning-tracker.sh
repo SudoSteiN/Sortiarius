@@ -18,7 +18,8 @@ INPUT="$(cat)"
 mkdir -p "$SCRATCH_DIR"
 
 COMMAND="$(echo "$INPUT" | jq -r '.tool_input.command // empty')"
-TOOL_OUTPUT="$(echo "$INPUT" | jq -r '.tool_result.stdout // empty' | head -5)"
+TOOL_OUTPUT="$(echo "$INPUT" | jq -r '.tool_result.stdout // empty' | head -10)"
+TOOL_STDERR="$(echo "$INPUT" | jq -r '.tool_result.stderr // empty' | head -5)"
 EXIT_CODE="$(echo "$INPUT" | jq -r '.tool_result.exit_code // 0')"
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 CWD="$(echo "$INPUT" | jq -r '.cwd // empty')"
@@ -58,7 +59,8 @@ jq -n -c \
   --arg exit_code "$EXIT_CODE" \
   --arg session "$SESSION_ID" \
   --arg output_preview "$TOOL_OUTPUT" \
-  '{timestamp: $ts, command: $cmd, domain: $domain, cwd: $cwd, exit_code: $exit_code, session: $session, output_preview: $output_preview}' \
+  --arg stderr_preview "$TOOL_STDERR" \
+  '{timestamp: $ts, command: $cmd, domain: $domain, cwd: $cwd, exit_code: $exit_code, session: $session, output_preview: $output_preview, stderr_preview: $stderr_preview}' \
   >> "$LOG_FILE" 2>/dev/null
 
 # --- Context Health Monitoring ---
