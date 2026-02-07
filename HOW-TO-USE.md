@@ -93,6 +93,14 @@ Layer 2 (Local):   ~/projects/my-app/CLAUDE.md
 | `sortiarius agent status` | Check background agent status |
 | `sortiarius agent review [dir]` | Review agent output |
 | `sortiarius agent digest` | Analyze session logs for patterns |
+| `sortiarius agent cancel <id>` | Stop a running agent |
+| `sortiarius agent cleanup` | Prune dead/completed agents from registry |
+| `sortiarius worktree add <name>` | Create git worktree + branch for parallel Claude session |
+| `sortiarius worktree ls` | List active worktrees |
+| `sortiarius worktree rm <name>` | Remove a worktree |
+| `sortiarius worktree prune` | Clean up stale/merged worktrees |
+| `sortiarius worktree aliases` | Print shell aliases (za, zb, zc) for quick worktree switching |
+| `sortiarius ui [--port N]` | Launch web dashboard (default port 8420) |
 | `sortiarius list` | List all projects in ~/projects/ |
 | `sortiarius update` | Pull latest Sortiarius from git |
 | `sortiarius uninstall` | Remove global config (keeps repo) |
@@ -117,15 +125,21 @@ Hooks are the key innovation. They run **as code** before/after Claude's actions
 
 Hooks are configured in `.claude/settings.json` and live as shell scripts in `.claude/hooks/`. They fire automatically on specific Claude Code events.
 
-### Active hooks
+### Active hooks (13 total)
 
 | Hook | Event | What it enforces |
 |------|-------|-----------------|
-| `session-start.sh` | SessionStart | Injects skill manifest + memory into every session |
+| `session-start.sh` | SessionStart | Injects skill manifest + memory + agent status + project context (PLAN.md current task) |
 | `safety-bash.sh` | PreToolUse:Bash | Blocks: `rm -rf`, `DROP TABLE`, `DELETE` without `WHERE`, `Remove-Az*` without `-WhatIf`, Azure resource deletion, production config writes |
 | `safety-files.sh` | PreToolUse:Edit/Write | Blocks: edits to `.env`, credentials, `.git/`, SSH keys |
-| `learning-tracker.sh` | PostToolUse:Bash | Logs commands to session log (async, non-blocking) |
-| `session-stop.sh` | Stop | Checks for uncommitted workspace changes |
+| `dev-workflow.sh` | PreToolUse:Bash | Enforces conventional commit format, blocks direct commits to main, blocks force push |
+| `workflow-guard.sh` | PreToolUse:Edit/Write | Blocks writing code without SPEC.md (spec-before-code), warns if PLAN.md missing or stale |
+| `pre-push-guard.sh` | PreToolUse:Bash | Warns when pushing if tests exist but weren't run this session |
+| `dependency-guard.sh` | PreToolUse:Bash | Warns on new package installs, detects typosquat package names |
+| `learning-tracker.sh` | PostToolUse:Bash | Logs commands + context health monitoring (warns at 30/60 ops, high error rate) |
+| `secret-scan.sh` | PostToolUse:Bash | Scans command output for leaked credentials (API keys, tokens, connection strings) |
+| `regression-guard.sh` | PostToolUse:Edit/Write | Tracks code modifications, reminds to re-run tests at thresholds |
+| `session-stop.sh` | Stop | Self-audit + quality gate (tests/build run?) + workspace check + knowledge library reminder |
 | `session-learn.sh` | Stop | Analyzes session patterns and suggests memory updates |
 
 ### What gets blocked (examples)
@@ -199,6 +213,47 @@ Reads the session command log (built by the learning-tracker hook) and uses Clau
 
 ---
 
+## Task System & Agent Teams
+
+For significant builds, Sortiarius uses Claude Code's task system with builder/validator agent pairs. This gives dependency-aware work queues and double-verification.
+
+### How it works
+
+1. **Plan** — Use `/plan_w_team <description>` to generate a structured spec in `specs/` with tasks, dependencies, and team assignments. A Stop hook validates the plan has all required sections before the agent can finish.
+2. **Build** — Use `/build specs/my-plan.md` to execute the plan. This creates all tasks via TaskCreate, sets dependencies, and deploys builder+validator agent pairs.
+3. **Validate** — Each builder task gets a corresponding read-only validator that verifies the work.
+
+### Agent Definitions (`.claude/agents/team/`)
+
+| Agent | Can Write | Purpose |
+|-------|-----------|---------|
+| **builder** | Yes | Implements one task. Self-validates via PostToolUse hooks (lint, type check after every edit) |
+| **validator** | **No** | Verifies builder work. `disallowedTools: Write, Edit, NotebookEdit` — structurally read-only |
+| **planner** | Plan only | Creates structured specs. `disallowedTools: Task` — cannot spawn agents |
+
+### Native Slash Commands (`.claude/commands/`)
+
+| Command | What it does |
+|---------|-------------|
+| `/plan_w_team` | Self-validating planning command. Stop hook ensures plan has Objective, Tasks, Team Orchestration sections |
+| `/build` | Reads a plan file, creates tasks, deploys builder+validator pairs with dependencies |
+| `/prime` | Read-only context loader (haiku model). Reads codebase structure, docs, config |
+
+### Self-Validation Hooks (`.claude/hooks/validators/`)
+
+| Hook | Used By | Purpose |
+|------|---------|---------|
+| `code_validator.sh` | Builder agent | Runs language-appropriate checks after Write/Edit (Python/ruff, Rust/cargo, TypeScript/tsc, Shell/bash -n). Blocks until fixed |
+| `validate_file_contains.sh` | Planner/plan_w_team | Validates output file exists with required sections. Forces agent to continue until complete |
+
+### When to use
+
+- **Task system** (`/plan_w_team` + `/build`): 3+ parallel tasks, needs verification
+- **Sub-agents** (`Task` tool): Quick research, single-purpose work
+- **Worktrees**: Interactive parallel dev, long-running features
+
+---
+
 ## The Learning Loop
 
 Sortiarius gets smarter over time through this cycle:
@@ -222,6 +277,37 @@ Sortiarius gets smarter over time through this cycle:
 ```
 
 Periodically run `sortiarius agent digest` to mine deeper patterns from the accumulated session logs.
+
+---
+
+## Knowledge Library
+
+Cross-project solutions, patterns, and reusable components live at `~/Sortiarius/workspace/knowledge/`:
+
+| File | Purpose |
+|------|---------|
+| `index.md` | Overview, project cross-reference, tag index |
+| `solutions.md` | Specific solutions with implementation details |
+| `patterns.md` | Architectural patterns and design decisions |
+| `components.md` | Reusable code components with source references |
+| `anti-patterns.md` | Things that didn't work and why |
+
+**Always searched before building something new.** The session-stop hook reminds you to update it after significant sessions. Solutions are tagged (auth, api, db, ui, deploy, test, security, perf, infra) and rated (HIGH/MEDIUM/LOW reuse).
+
+---
+
+## Evaluation System
+
+Development loops get clear stop conditions via `~/Sortiarius/workspace/skills/evaluation/SKILL.md`:
+
+1. **CRITERIA.md** — Auto-generated from SPEC.md with checkable acceptance criteria per category (Build, Functional, Test, API, UI, Security, Deployment, Performance)
+2. **Automated checks** — Build, types, lint, tests, security audit
+3. **Scoring** — 0-100% with phase-specific thresholds
+4. **Gate decisions**:
+   - `>= 90%` → PASS (proceed to next phase)
+   - `80-89%` → CONDITIONAL PASS (proceed, log gaps)
+   - `60-79%` → ITERATE (continue dev loop)
+   - `< 60%` → ESCALATE (stop, discuss approach)
 
 ---
 
@@ -311,21 +397,40 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
 ```
 ~/Sortiarius/                              # Home base
 ├── CLAUDE.md                              # Brain (symlinked to ~/.claude/)
+├── SPEC.md                                # Framework spec
+├── README.md                              # Repo overview
 ├── HOW-TO-USE.md                          # This file
 ├── setup.sh                               # One-time global setup
 ├── .gitignore                             # Ignores secrets, scratch, IDE files
 ├── .claude/
-│   ├── settings.json                      # Hook configuration (committed)
-│   └── hooks/                             # Hook scripts
-│       ├── session-start.sh               # Context injection on startup
+│   ├── settings.json                      # Hook configuration + agent teams env
+│   ├── agents/team/                       # Agent definitions for task system
+│   │   ├── builder.md                     # Focused implementation agent (self-validates)
+│   │   ├── validator.md                   # Read-only verification agent
+│   │   └── planner.md                     # Planning agent (no agent spawning)
+│   ├── commands/                          # Native slash commands
+│   │   ├── plan_w_team.md                 # Self-validating team planning (/plan_w_team)
+│   │   ├── build.md                       # Plan executor with task system (/build)
+│   │   └── prime.md                       # Read-only context loader (/prime)
+│   └── hooks/                             # 13 enforcement scripts + 2 validators
+│       ├── session-start.sh               # Context injection (skills, memory, agents, PLAN.md)
 │       ├── safety-bash.sh                 # Block dangerous bash commands
 │       ├── safety-files.sh                # Protect sensitive files
-│       ├── learning-tracker.sh            # Log commands for pattern analysis
-│       ├── session-stop.sh                # Workspace dirty check
-│       └── session-learn.sh               # Session analysis + memory suggestions
+│       ├── dev-workflow.sh                # Enforce conventional commits, branch rules
+│       ├── workflow-guard.sh              # Enforce spec-before-code
+│       ├── pre-push-guard.sh             # Warn if tests not run before push
+│       ├── dependency-guard.sh            # Flag new packages, detect typosquats
+│       ├── learning-tracker.sh            # Log commands + context health monitoring
+│       ├── secret-scan.sh                 # Scan output for leaked credentials
+│       ├── regression-guard.sh            # Track code mods, remind to test
+│       ├── session-stop.sh                # Self-audit + quality gate
+│       ├── session-learn.sh               # Session analysis + memory suggestions
+│       └── validators/                    # Validation scripts for agent hooks
+│           ├── code_validator.sh          # Language-aware lint/type checks
+│           └── validate_file_contains.sh  # Section presence validation
 ├── bin/
-│   ├── sortiarius                         # Main launcher command
-│   └── sortiarius-agent                   # Autonomous agent launcher
+│   ├── sortiarius                         # Main CLI
+│   └── sortiarius-agent                   # Agent launcher with persistent registry
 └── workspace/
     ├── memory/                            # Persistent knowledge (split by domain)
     │   ├── index.md                       # Quick-reference and preferences
@@ -333,21 +438,61 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
     │   ├── powershell.md                  # Script patterns and preferences
     │   ├── incidents.md                   # Past incidents and lessons
     │   └── solutions.md                   # Reusable solutions
+    ├── knowledge/                         # Cross-project solution library
+    │   ├── index.md                       # Overview, tags, project cross-reference
+    │   ├── solutions.md                   # Specific solutions with details
+    │   ├── patterns.md                    # Architectural patterns
+    │   ├── components.md                  # Reusable code components
+    │   └── anti-patterns.md               # Failed approaches and lessons
+    ├── ui/                                # Web dashboard
+    │   ├── server.py                      # Python stdlib HTTP server
+    │   └── index.html                     # Single-page dashboard
     ├── scratch/                           # Temp files (gitignored)
     │   ├── session-log.jsonl              # Command log (from learning-tracker hook)
+    │   ├── agent-registry.json            # Persistent agent registry
     │   └── agents/                        # Agent output directories
-    └── skills/
+    ├── templates/                         # Reusable GitHub templates
+    │   └── github/
+    │       ├── pull_request_template.md   # PR template
+    │       ├── ISSUE_TEMPLATE/            # Bug + feature templates
+    │       └── workflows/ci.yml           # CI workflow (multi-stack)
+    └── skills/                            # 30 autodiscovered skills
+        ├── product-spec/SKILL.md          # Requirements gathering (pipeline step 1)
+        ├── project-plan/SKILL.md          # Cross-session tracking (step 2)
+        ├── architecture/SKILL.md          # Tech stack decisions (step 3)
+        ├── full-stack-dev/SKILL.md        # Code implementation (step 4)
+        ├── run-and-fix/SKILL.md           # Iterative debugging (step 5)
+        ├── code-review/SKILL.md           # Quality review (step 6)
+        ├── testing/SKILL.md               # Test coverage (step 7)
+        ├── integration/SKILL.md           # Combine agent outputs (step 8)
+        ├── deployment/SKILL.md            # Containerize and ship (step 9)
+        ├── github-workflow/SKILL.md       # Git workflow + Actions + releases (step 10)
+        ├── orchestrator/SKILL.md          # Agent hierarchy management
+        ├── evaluation/SKILL.md            # Acceptance criteria + stop conditions
+        ├── worktree-workflow/SKILL.md     # Git worktree parallel development
+        ├── self-improve/SKILL.md          # CLAUDE.md self-improvement after corrections
+        ├── prompt-playbook/SKILL.md       # Reusable prompt patterns
+        ├── data-analytics/SKILL.md        # Database querying and data analysis
+        ├── learning-mode/SKILL.md         # Explanations, diagrams, presentations
+        ├── coding-agent/SKILL.md          # Parallel agent coordination
+        ├── tmux-orchestration/SKILL.md    # Multi-pane terminal orchestration
         ├── problem-modeling/SKILL.md      # UPSA methodology
         ├── azure-ops/SKILL.md             # Azure patterns
         ├── powershell-automation/SKILL.md # Script templates
         ├── incident-response/SKILL.md     # Incident procedures
         ├── contrastive-scoring/SKILL.md   # Approach comparison
-        └── verify-response/SKILL.md       # Self-verification
+        ├── verify-response/SKILL.md       # Self-verification
+        ├── summarize/SKILL.md             # Content summarization
+        ├── session-logs/SKILL.md          # Query session logs
+        └── healthcheck/SKILL.md           # System health audits
 
 ~/.claude/
 └── CLAUDE.md → ~/Sortiarius/CLAUDE.md     # Symlink (created by setup.sh)
 
 ~/projects/                                # Your projects (created by sortiarius new)
 └── my-app/
-    └── CLAUDE.md                          # Project-specific context
+    ├── CLAUDE.md                          # Project-specific context
+    ├── SPEC.md                            # Product spec (generated by product-spec skill)
+    ├── PLAN.md                            # Progress tracker (generated by project-plan skill)
+    └── CRITERIA.md                        # Evaluation criteria (generated by evaluation skill)
 ```

@@ -39,6 +39,70 @@ if [ -f "$MEMORY_DIR/index.md" ]; then
   MEMORY_SUMMARY="$(awk '/^## Learned Preferences/,/^## /{if(/^## / && !/^## Learned Preferences/)exit; print}' "$MEMORY_DIR/index.md" | grep -E '^- ' | head -10)"
 fi
 
+# --- Check for project context (SPEC.md / PLAN.md in CWD) ---
+PROJECT_CONTEXT=""
+CWD="${CLAUDE_CWD:-$(pwd)}"
+
+# Walk up from CWD to find project root
+PROJECT_ROOT=""
+CHECK_DIR="$CWD"
+while [ "$CHECK_DIR" != "/" ] && [ "$CHECK_DIR" != "." ]; do
+  if [ -f "$CHECK_DIR/package.json" ] || [ -f "$CHECK_DIR/Cargo.toml" ] || \
+     [ -f "$CHECK_DIR/pyproject.toml" ] || [ -f "$CHECK_DIR/go.mod" ] || \
+     [ -f "$CHECK_DIR/requirements.txt" ] || [ -d "$CHECK_DIR/.git" ]; then
+    PROJECT_ROOT="$CHECK_DIR"
+    break
+  fi
+  CHECK_DIR="$(dirname "$CHECK_DIR")"
+done
+
+if [ -n "$PROJECT_ROOT" ] && [ "$PROJECT_ROOT" != "$SORTIARIUS_HOME" ]; then
+  PROJECT_NAME="$(basename "$PROJECT_ROOT")"
+  PROJECT_CONTEXT="Project: $PROJECT_NAME ($PROJECT_ROOT)"
+
+  # Detect if we're in a git worktree (not the main working tree)
+  if git -C "$PROJECT_ROOT" rev-parse --git-common-dir >/dev/null 2>&1; then
+    GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null || echo "")"
+    GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null || echo "")"
+    if [ -n "$GIT_COMMON" ] && [ -n "$GIT_DIR" ] && [ "$GIT_COMMON" != "$GIT_DIR" ] && [ "$GIT_COMMON" != ".git" ]; then
+      WT_BRANCH="$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo "unknown")"
+      WT_MAIN="$(git -C "$PROJECT_ROOT" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
+      PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Worktree: branch=${WT_BRANCH} (main tree: ${WT_MAIN})"
+      WT_COUNT="$(git -C "$PROJECT_ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ')"
+      [ "$WT_COUNT" -gt 1 ] && PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Parallel sessions: ${WT_COUNT} worktrees active"
+    fi
+  fi
+
+  # Check SPEC.md
+  if [ -f "$PROJECT_ROOT/SPEC.md" ]; then
+    SPEC_SUMMARY="$(awk '/^## Problem Statement/{found=1; next} found && /^$/{if(p)exit; next} found && /^##/{exit} found{p=1; print}' "$PROJECT_ROOT/SPEC.md" | head -2)"
+    [ -n "$SPEC_SUMMARY" ] && PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Spec: ${SPEC_SUMMARY}"
+  else
+    PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  WARNING: No SPEC.md — run product-spec skill before writing code"
+  fi
+
+  # Check PLAN.md and extract CURRENT task
+  if [ -f "$PROJECT_ROOT/PLAN.md" ]; then
+    CURRENT_TASK="$(grep -m1 'CURRENT' "$PROJECT_ROOT/PLAN.md" | sed 's/.*CURRENT[^]]*\]\s*//' | sed 's/\*//g' | head -c 120)"
+    [ -n "$CURRENT_TASK" ] && PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Current task: ${CURRENT_TASK}"
+
+    # Check for stale PLAN.md (>7 days)
+    if command -v stat >/dev/null 2>&1; then
+      PLAN_MTIME="$(stat -c %Y "$PROJECT_ROOT/PLAN.md" 2>/dev/null || stat -f %m "$PROJECT_ROOT/PLAN.md" 2>/dev/null || echo "0")"
+      NOW="$(date +%s)"
+      PLAN_AGE_DAYS=$(( (NOW - PLAN_MTIME) / 86400 ))
+      [ "$PLAN_AGE_DAYS" -gt 7 ] && PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  WARNING: PLAN.md is ${PLAN_AGE_DAYS} days stale — update it"
+    fi
+
+    # Count remaining tasks
+    REMAINING="$(grep -c '^\s*- \[ \]' "$PROJECT_ROOT/PLAN.md" 2>/dev/null || echo "0")"
+    COMPLETED="$(grep -c '^\s*- \[x\]' "$PROJECT_ROOT/PLAN.md" 2>/dev/null || echo "0")"
+    PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  Progress: ${COMPLETED} done, ${REMAINING} remaining"
+  else
+    PROJECT_CONTEXT="${PROJECT_CONTEXT}\n  WARNING: No PLAN.md — consider creating one to track progress"
+  fi
+fi
+
 # --- Check workspace dirty status ---
 WORKSPACE_DIRTY=""
 if [ -d "$SORTIARIUS_HOME/.git" ]; then
@@ -91,6 +155,8 @@ ${WORKSPACE_DIRTY:+
 ${WORKSPACE_DIRTY}}
 ${AGENT_STATUS:+
 ${AGENT_STATUS}}
+${PROJECT_CONTEXT:+
+$(echo -e "$PROJECT_CONTEXT")}
 Context management: Keep responses focused. For complex tasks, delegate to sub-agents via 'sortiarius agent'. Read skill files only when triggered, not preemptively."
 
 # Output as JSON for Claude Code to consume
