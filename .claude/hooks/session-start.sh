@@ -10,7 +10,12 @@ set -uo pipefail
 SORTIARIUS_HOME="${SORTIARIUS_HOME:-$HOME/Sortiarius}"
 SKILLS_DIR="$SORTIARIUS_HOME/workspace/skills"
 MEMORY_DIR="$SORTIARIUS_HOME/workspace/memory"
-REGISTRY="$SORTIARIUS_HOME/workspace/scratch/agent-registry.json"
+SCRATCH_DIR="$SORTIARIUS_HOME/workspace/scratch"
+REGISTRY="$SCRATCH_DIR/agent-registry.json"
+
+# --- Session timestamp marker (used by stop hook to detect in-session updates) ---
+mkdir -p "$SCRATCH_DIR"
+touch "$SCRATCH_DIR/.session-start"
 
 # --- Build skill manifest (compact: name + triggers only) ---
 SKILL_MANIFEST=""

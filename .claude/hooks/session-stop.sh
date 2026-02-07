@@ -78,17 +78,30 @@ if [ -d "$SORTIARIUS_HOME/.git" ]; then
   fi
 fi
 
-# --- Memory: Check if knowledge should be updated ---
-MEMORY_INDEX="$SORTIARIUS_HOME/workspace/memory/index.md"
-if [ -f "$MEMORY_INDEX" ]; then
-  if [ "$(find "$MEMORY_INDEX" -mmin +120 2>/dev/null)" ]; then
-    MESSAGES="${MESSAGES}Memory hasn't been updated recently. Consider whether anything from this session should be recorded.\n"
+# --- Memory: Check if memory was updated this session ---
+# Uses session-start marker to detect in-session writes (any file under memory/)
+MEMORY_DIR="$SORTIARIUS_HOME/workspace/memory"
+SESSION_MARKER="$SCRATCH_DIR/.session-start"
+MEMORY_UPDATED=false
+if [ -f "$SESSION_MARKER" ] && [ -d "$MEMORY_DIR" ]; then
+  # Check if any memory file is newer than the session start marker
+  if find "$MEMORY_DIR" -type f -newer "$SESSION_MARKER" 2>/dev/null | grep -q .; then
+    MEMORY_UPDATED=true
   fi
 fi
+if ! $MEMORY_UPDATED; then
+  MESSAGES="${MESSAGES}Memory hasn't been updated this session. Consider whether anything should be recorded.\n"
+fi
 
-# --- Knowledge Library: Remind to update if significant work was done ---
+# --- Knowledge Library: Check if updated this session, remind if not ---
 KNOWLEDGE_SOLUTIONS="$SORTIARIUS_HOME/workspace/knowledge/solutions.md"
-if [ -f "$SESSION_LOG" ] && [ -f "$KNOWLEDGE_SOLUTIONS" ]; then
+KNOWLEDGE_UPDATED=false
+if [ -f "$SESSION_MARKER" ] && [ -f "$KNOWLEDGE_SOLUTIONS" ]; then
+  if find "$KNOWLEDGE_SOLUTIONS" -newer "$SESSION_MARKER" 2>/dev/null | grep -q .; then
+    KNOWLEDGE_UPDATED=true
+  fi
+fi
+if ! $KNOWLEDGE_UPDATED && [ -f "$SESSION_LOG" ]; then
   SESSION_CMDS="$(wc -l < "$SESSION_LOG" 2>/dev/null | tr -d ' ')"
   if [ "$SESSION_CMDS" -gt 20 ]; then
     MESSAGES="${MESSAGES}Significant session ($SESSION_CMDS operations). Consider updating the knowledge library with any reusable solutions.\n"
