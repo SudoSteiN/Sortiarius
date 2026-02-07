@@ -1,0 +1,17 @@
+[package]
+name = "woodforge-renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.29"
+log = "0.4"
+woodforge-core = { path = "../core" }
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "HtmlCanvasElement",
+]

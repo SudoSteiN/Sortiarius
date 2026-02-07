@@ -1,7 +1,7 @@
 # WoodForge — Plan
 
 ## Current Phase
-Phase 1: Foundation — Rust/WASM scaffold, build pipeline, basic 3D rendering
+Phase 3: Wood Species & Rendering
 
 ## Progress
 Last updated: 2026-02-07
@@ -10,27 +10,27 @@ Last updated: 2026-02-07
 - [x] Product spec finalized (SPEC.md) (2026-02-07)
 - [x] Project plan created (PLAN.md) (2026-02-07)
 - [x] Evaluation criteria defined (CRITERIA.md) (2026-02-07)
+- [x] **Phase 1: Foundation scaffold** (2026-02-07)
+  - Rust workspace: core, renderer, wasm-bridge crates
+  - React + TypeScript + Vite + Tailwind frontend
+  - wasm-pack build pipeline (WASM builds in ~13s, 492KB gzipped)
+  - wgpu renderer with directional lighting shader
+  - Camera orbit/pan/zoom controls (US-013)
+- [x] **Phase 2: Lumber & Scene Graph** (2026-02-07)
+  - Box mesh geometry generator (24 verts, 36 indices, face normals)
+  - Standard lumber database: 17 sizes + 3 sheet goods + 4 standard lengths
+  - Unit system: imperial (fractional inches) ↔ metric (mm) conversion
+  - Scene graph with parent-child, world transform, mesh cache, serialization
+  - Multi-object renderer with per-object model matrix uniforms
+  - Snap system: grid, face, edge with configurable thresholds
+  - WASM bridge: scene API (add/remove/move/rotate boards) + lumber API
+  - Full React UI: toolbar, scene tree, properties panel, lumber picker, status bar
+  - 24 unit tests passing across all core modules
 
 ### In Progress
-- [ ] **CURRENT →** Phase 1: Foundation scaffold
-  - Set up Rust workspace (crate structure: core, wasm-bridge, renderer)
-  - Set up React + TypeScript + Vite frontend
-  - Configure wasm-pack build pipeline (Rust → WASM → JS)
-  - Basic wgpu canvas rendering (empty scene with camera controls)
-  - Verify end-to-end: React loads WASM, renders a colored cube in wgpu canvas
-  - Orbit/pan/zoom camera controls (US-013)
+- [ ] **CURRENT →** Phase 3: Wood Species & Rendering
 
 ### Up Next
-
-#### Phase 2: Lumber & Scene Graph
-- [ ] Implement Truck B-rep integration for box primitives
-- [ ] Standard lumber database (all dimensions from spec, nominal → actual)
-- [ ] Unit system: imperial ↔ metric conversion layer (US-001, US-002)
-- [ ] Place standard dimensional lumber in scene (US-001)
-- [ ] Create custom-dimensioned boards (US-002)
-- [ ] Scene tree data structure (parent-child component hierarchy)
-- [ ] Move, rotate, snap-to-face, snap-to-edge (US-004)
-- [ ] Grid snapping toggle
 
 #### Phase 3: Wood Species & Rendering
 - [ ] Wood species database (12 species with mechanical properties)
