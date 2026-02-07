@@ -62,7 +62,7 @@ case "$FILE_PATH" in
     TS_DIR="$(dirname "$FILE_PATH")"
     while [ "$TS_DIR" != "/" ]; do
       if [ -f "$TS_DIR/tsconfig.json" ]; then
-        RESULT="$(npx tsc --noEmit --project "$TS_DIR/tsconfig.json" 2>&1)"
+        RESULT="$(cd "$TS_DIR" && npx -p typescript tsc --noEmit --project "$TS_DIR/tsconfig.json" 2>&1)"
         if [ $? -ne 0 ]; then
           jq -n --arg reason "TypeScript check failed:\n$(echo "$RESULT" | tail -20)" \
             '{"decision": "block", "reason": $reason}'
