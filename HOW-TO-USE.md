@@ -213,6 +213,47 @@ Reads the session command log (built by the learning-tracker hook) and uses Clau
 
 ---
 
+## Task System & Agent Teams
+
+For significant builds, Sortiarius uses Claude Code's task system with builder/validator agent pairs. This gives dependency-aware work queues and double-verification.
+
+### How it works
+
+1. **Plan** — Use `/plan_w_team <description>` to generate a structured spec in `specs/` with tasks, dependencies, and team assignments. A Stop hook validates the plan has all required sections before the agent can finish.
+2. **Build** — Use `/build specs/my-plan.md` to execute the plan. This creates all tasks via TaskCreate, sets dependencies, and deploys builder+validator agent pairs.
+3. **Validate** — Each builder task gets a corresponding read-only validator that verifies the work.
+
+### Agent Definitions (`.claude/agents/team/`)
+
+| Agent | Can Write | Purpose |
+|-------|-----------|---------|
+| **builder** | Yes | Implements one task. Self-validates via PostToolUse hooks (lint, type check after every edit) |
+| **validator** | **No** | Verifies builder work. `disallowedTools: Write, Edit, NotebookEdit` — structurally read-only |
+| **planner** | Plan only | Creates structured specs. `disallowedTools: Task` — cannot spawn agents |
+
+### Native Slash Commands (`.claude/commands/`)
+
+| Command | What it does |
+|---------|-------------|
+| `/plan_w_team` | Self-validating planning command. Stop hook ensures plan has Objective, Tasks, Team Orchestration sections |
+| `/build` | Reads a plan file, creates tasks, deploys builder+validator pairs with dependencies |
+| `/prime` | Read-only context loader (haiku model). Reads codebase structure, docs, config |
+
+### Self-Validation Hooks (`.claude/hooks/validators/`)
+
+| Hook | Used By | Purpose |
+|------|---------|---------|
+| `code_validator.sh` | Builder agent | Runs language-appropriate checks after Write/Edit (Python/ruff, Rust/cargo, TypeScript/tsc, Shell/bash -n). Blocks until fixed |
+| `validate_file_contains.sh` | Planner/plan_w_team | Validates output file exists with required sections. Forces agent to continue until complete |
+
+### When to use
+
+- **Task system** (`/plan_w_team` + `/build`): 3+ parallel tasks, needs verification
+- **Sub-agents** (`Task` tool): Quick research, single-purpose work
+- **Worktrees**: Interactive parallel dev, long-running features
+
+---
+
 ## The Learning Loop
 
 Sortiarius gets smarter over time through this cycle:
@@ -362,8 +403,16 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
 ├── setup.sh                               # One-time global setup
 ├── .gitignore                             # Ignores secrets, scratch, IDE files
 ├── .claude/
-│   ├── settings.json                      # Hook configuration (committed)
-│   └── hooks/                             # 13 enforcement scripts
+│   ├── settings.json                      # Hook configuration + agent teams env
+│   ├── agents/team/                       # Agent definitions for task system
+│   │   ├── builder.md                     # Focused implementation agent (self-validates)
+│   │   ├── validator.md                   # Read-only verification agent
+│   │   └── planner.md                     # Planning agent (no agent spawning)
+│   ├── commands/                          # Native slash commands
+│   │   ├── plan_w_team.md                 # Self-validating team planning (/plan_w_team)
+│   │   ├── build.md                       # Plan executor with task system (/build)
+│   │   └── prime.md                       # Read-only context loader (/prime)
+│   └── hooks/                             # 13 enforcement scripts + 2 validators
 │       ├── session-start.sh               # Context injection (skills, memory, agents, PLAN.md)
 │       ├── safety-bash.sh                 # Block dangerous bash commands
 │       ├── safety-files.sh                # Protect sensitive files
@@ -375,7 +424,10 @@ This removes the `~/.claude/CLAUDE.md` symlink and restores any backup. The repo
 │       ├── secret-scan.sh                 # Scan output for leaked credentials
 │       ├── regression-guard.sh            # Track code mods, remind to test
 │       ├── session-stop.sh                # Self-audit + quality gate
-│       └── session-learn.sh               # Session analysis + memory suggestions
+│       ├── session-learn.sh               # Session analysis + memory suggestions
+│       └── validators/                    # Validation scripts for agent hooks
+│           ├── code_validator.sh          # Language-aware lint/type checks
+│           └── validate_file_contains.sh  # Section presence validation
 ├── bin/
 │   ├── sortiarius                         # Main CLI
 │   └── sortiarius-agent                   # Agent launcher with persistent registry

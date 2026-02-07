@@ -256,6 +256,56 @@ The session-start hook reports agent status on every session resume so nothing g
 
 ---
 
+## Task System & Agent Teams
+
+For significant builds, Sortiarius uses Claude Code's task system with builder/validator agent pairs. This replaces flat to-do lists with dependency-aware work queues and double-verification.
+
+### Core Pattern: Plan → Build → Validate
+
+1. **Plan** — A planner agent (or `/plan_w_team`) creates a structured spec with tasks, dependencies, and team assignments
+2. **Build** — Builder agents execute tasks in parallel where possible, self-validating via PostToolUse hooks
+3. **Validate** — Validator agents verify each builder's work (structurally read-only — cannot modify files)
+
+### Agent Definitions (`.claude/agents/team/`)
+
+| Agent | File | Can Write | Purpose |
+|-------|------|-----------|---------|
+| **builder** | `builder.md` | Yes | Implements one task. PostToolUse hooks run lint/type checks after every edit |
+| **validator** | `validator.md` | **No** (disallowedTools) | Verifies builder work. Read-only — structurally enforced |
+| **planner** | `planner.md` | Plan only | Creates structured specs. Cannot spawn agents (Task tool disabled) |
+
+### Native Slash Commands (`.claude/commands/`)
+
+| Command | What it does |
+|---------|-------------|
+| `/plan_w_team` | Self-validating planning: generates structured spec in `specs/`, Stop hook ensures all required sections exist |
+| `/build` | Reads a plan file, creates tasks via TaskCreate, deploys builder+validator agent pairs with dependencies |
+| `/prime` | Read-only context loader: reads codebase structure, docs, and config (haiku model, no write tools) |
+
+### Self-Validation Hooks (`.claude/hooks/validators/`)
+
+| Hook | Used By | What it does |
+|------|---------|-------------|
+| `code_validator.sh` | Builder PostToolUse | Runs language-appropriate checks after Write/Edit (ruff for Python, cargo check for Rust, tsc for TypeScript, bash -n for shell). Blocks agent until errors are fixed |
+| `validate_file_contains.sh` | Planner/plan_w_team Stop | Validates output file exists and contains required sections. Forces agent to continue until complete |
+
+### When to Use Task System
+
+Use the task system (`/plan_w_team` + `/build`) for:
+- Features with 3+ independent implementation tasks
+- Work that benefits from parallel execution
+- High-stakes changes that need verification (builder produces, validator checks)
+
+Use simple sub-agents (`Task` tool) for:
+- Quick research or one-off queries
+- Single-purpose tasks that don't need coordination
+
+Use worktrees for:
+- Interactive parallel development with separate Claude sessions
+- Long-running features that need isolation
+
+---
+
 ## Parallel Development with Worktrees
 
 Git worktrees are the #1 productivity unlock. Each worktree gets its own Claude session with isolated context.

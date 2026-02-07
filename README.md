@@ -8,7 +8,8 @@ Sortiarius wraps around Claude Code to add capabilities it doesn't have natively
 
 - **Persistent memory** — Knowledge split by domain (Azure, PowerShell, database, etc.) that carries across sessions
 - **30 skills** — Autodiscovered via YAML frontmatter triggers, covering everything from product specs to deployment
-- **13 hooks** — Deterministic enforcement that Claude can't override: safety guards, workflow gates, secret scanning, regression tracking
+- **13 hooks + 2 validators** — Deterministic enforcement that Claude can't override: safety guards, workflow gates, secret scanning, regression tracking, code validation
+- **Agent teams** — Builder/validator pairs with task dependencies, self-validating commands, and native slash commands
 - **Agent hierarchy** — 3-level system (super agent → project agents → task sub-agents) with persistent registry
 - **Knowledge library** — Cross-project solutions, patterns, and anti-patterns that prevent reinventing the wheel
 - **Evaluation system** — Acceptance criteria derived from specs, with automated checks and stop conditions for dev loops
@@ -75,6 +76,13 @@ Hooks enforce rules as **code** — Claude can't ignore or bypass them.
 | `session-stop.sh` | Stop | Self-audit, quality gate, workspace check |
 | `session-learn.sh` | Stop | Suggests memory updates from session patterns |
 
+### Validation Hooks (`.claude/hooks/validators/`)
+
+| Hook | Used By | Purpose |
+|------|---------|---------|
+| `code_validator.sh` | Builder agent | Language-aware lint/type checks after Write/Edit |
+| `validate_file_contains.sh` | Planner agent | Validates output file has required sections |
+
 ## Skills (30)
 
 Skills are autodiscovered from `workspace/skills/*/SKILL.md`. No routing table — YAML frontmatter `triggers:` handle matching.
@@ -94,20 +102,44 @@ Skills are autodiscovered from `workspace/skills/*/SKILL.md`. No routing table �
 **Utility skills:**
 `summarize` · `session-logs` · `healthcheck`
 
+## Agent Teams & Task System
+
+For significant builds, the task system orchestrates builder/validator agent pairs with dependency tracking:
+
+```
+/plan_w_team "Add OAuth2 support"
+  → Planner generates specs/oauth2-plan.md (self-validated via Stop hook)
+
+/build specs/oauth2-plan.md
+  → Task 1: auth-builder (builder) → Task 2: auth-validator (validator)
+  → Task 3: api-builder (builder) → Task 4: api-validator (validator)
+  → Task 5: integration-builder → Task 6: integration-validator
+```
+
+**Agent definitions** at `.claude/agents/team/`:
+- **builder** — Implements one task. PostToolUse hooks run code validation after every edit
+- **validator** — Read-only verification. `disallowedTools: Write, Edit` — structurally cannot modify files
+- **planner** — Creates specs only. `disallowedTools: Task` — cannot spawn agents
+
+**Slash commands** at `.claude/commands/`:
+- `/plan_w_team` — Self-validating planning with Stop hooks
+- `/build` — Plan executor using TaskCreate/TaskUpdate with dependencies
+- `/prime` — Read-only context loader (haiku model)
+
 ## Agent Hierarchy
 
 ```
 Sortiarius (Level 0 — Super Agent)
 ├── Knowledge Library (cross-project patterns)
 ├── Project Agent: MyApp (Level 1)
-│   ├── Sub-agent: Backend API (Level 2)
-│   ├── Sub-agent: Frontend UI (Level 2)
-│   └── Sub-agent: Test Suite (Level 2)
+│   ├── Builder: Backend API (Level 2) → Validator: Backend API
+│   ├── Builder: Frontend UI (Level 2) → Validator: Frontend UI
+│   └── Builder: Test Suite (Level 2) → Validator: Test Suite
 └── Project Agent: OtherApp (Level 1)
-    └── Sub-agents as needed
+    └── Builder/Validator pairs as needed
 ```
 
-Agents communicate through files (SPEC.md, PLAN.md, output files, knowledge library). The registry persists across sessions.
+Agents communicate through the task system (TaskCreate/Update/List/Get) and files (SPEC.md, PLAN.md, knowledge library). The registry persists across sessions.
 
 ## Knowledge Library
 
@@ -137,8 +169,10 @@ Development loops get clear stop conditions:
 ├── HOW-TO-USE.md                # Detailed usage guide
 ├── setup.sh                     # One-time setup
 ├── .claude/
-│   ├── settings.json            # Hook configuration
-│   └── hooks/                   # 13 enforcement scripts
+│   ├── settings.json            # Hook configuration + agent teams env
+│   ├── agents/team/             # Agent definitions (builder, validator, planner)
+│   ├── commands/                # Native slash commands (/plan_w_team, /build, /prime)
+│   └── hooks/                   # 13 enforcement scripts + 2 validators
 ├── bin/
 │   ├── sortiarius               # Main CLI
 │   └── sortiarius-agent         # Agent launcher
