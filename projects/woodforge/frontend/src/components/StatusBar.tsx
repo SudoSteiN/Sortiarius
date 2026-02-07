@@ -6,6 +6,7 @@ export function StatusBar() {
   const unitSystem = useStore((s) => s.unitSystem);
   const gridSnap = useStore((s) => s.gridSnap);
   const wasmReady = useStore((s) => s.wasmReady);
+  const statusMessage = useStore((s) => s.statusMessage);
   const store = useStore();
 
   const nodeCount = sceneTree?.nodes.length ?? 0;
@@ -31,6 +32,9 @@ export function StatusBar() {
             'Loading WASM...'
           )}
         </span>
+        {statusMessage && (
+          <span className="text-gray-500 ml-2">{statusMessage}</span>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <button

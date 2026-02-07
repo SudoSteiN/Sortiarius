@@ -1,6 +1,6 @@
 import { useStore } from '../store';
 import type { SceneNodeSnapshot } from '../types/scene';
-import { removeNode } from '../wasm';
+import { removeNode, selectNode } from '../wasm';
 
 function TreeNode({ node }: { node: SceneNodeSnapshot }) {
   const selectedNodeId = useStore((s) => s.selectedNodeId);
@@ -24,7 +24,7 @@ function TreeNode({ node }: { node: SceneNodeSnapshot }) {
           ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
           : 'text-gray-300 hover:bg-gray-700/50 border border-transparent'
       }`}
-      onClick={() => setSelectedNodeId(node.id)}
+      onClick={() => { selectNode(node.id); setSelectedNodeId(node.id); }}
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <span className="text-xs opacity-60">&#9638;</span>

@@ -4,11 +4,19 @@ use wasm_bindgen::prelude::*;
 
 mod scene_api;
 mod lumber_api;
+mod species_api;
+mod joinery_api;
+mod analysis_api;
+mod project_api;
 
 use woodforge_core::{
+    cost::PriceDatabase,
+    history::History,
+    joinery::JointStore,
     lumber::LumberCatalog,
     scene::SceneGraph,
     snap::SnapConfig,
+    species::SpeciesDatabase,
     units::UnitSystem,
 };
 
@@ -18,6 +26,14 @@ pub struct AppState {
     pub catalog: LumberCatalog,
     pub snap_config: SnapConfig,
     pub unit_system: UnitSystem,
+    pub species_db: SpeciesDatabase,
+    pub joint_store: JointStore,
+    pub history: History,
+    pub price_db: PriceDatabase,
+    /// Per-board species assignment: NodeId string -> species_id
+    pub board_species: std::collections::HashMap<String, String>,
+    /// Per-board finish assignment: NodeId string -> finish JSON
+    pub board_finishes: std::collections::HashMap<String, String>,
 }
 
 thread_local! {
@@ -27,6 +43,12 @@ thread_local! {
         catalog: LumberCatalog::new(),
         snap_config: SnapConfig::default(),
         unit_system: UnitSystem::Imperial,
+        species_db: SpeciesDatabase::new(),
+        joint_store: JointStore::new(),
+        history: History::new(),
+        price_db: PriceDatabase::new(),
+        board_species: std::collections::HashMap::new(),
+        board_finishes: std::collections::HashMap::new(),
     });
 }
 
@@ -44,9 +66,15 @@ pub async fn init_renderer(canvas: web_sys::HtmlCanvasElement, width: u32, heigh
         ..Default::default()
     });
 
+    #[cfg(target_arch = "wasm32")]
     let surface = instance
         .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
         .map_err(|e| JsValue::from_str(&format!("Failed to create surface: {}", e)))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let surface: wgpu::Surface<'static> = {
+        let _ = (&canvas, &instance);
+        unreachable!("WASM bridge only runs in browser")
+    };
 
     let renderer = woodforge_renderer::Renderer::new(instance, surface, width, height).await;
     APP.with(|app| {

@@ -1,46 +1,55 @@
 use crate::types::MeshData;
 
-/// Generate a box mesh with proper face normals.
+/// Generate a box mesh with proper face normals and UV coordinates.
 /// Box is centered at origin, extending from -dim/2 to +dim/2.
 /// Width = X axis, Height = Y axis, Depth = Z axis.
 ///
-/// Returns 24 vertices (4 per face × 6 faces) with face normals,
+/// Returns 24 vertices (4 per face × 6 faces) with face normals and UVs,
 /// and 36 indices (2 triangles per face × 6 faces).
+///
+/// UV mapping: each face gets planar-projected UVs based on face dimensions.
+/// The UV scale is in inches so that textures tile naturally.
 pub fn generate_board_mesh(width: f64, height: f64, depth: f64) -> MeshData {
     let hw = (width / 2.0) as f32;
     let hh = (height / 2.0) as f32;
     let hd = (depth / 2.0) as f32;
 
+    let w = width as f32;
+    let h = height as f32;
+    let d = depth as f32;
+
+    // UV scale: 1 UV unit = 1 inch (textures are generated to match)
+    // Each face maps its 2D extent to UVs
+
     // 6 faces × 4 vertices each = 24 vertices
-    // Each face has its own normal for flat shading
     #[rustfmt::skip]
     let positions: Vec<f32> = vec![
-        // Front face (+Z)
+        // Front face (+Z) — XY plane
         -hw, -hh,  hd,
          hw, -hh,  hd,
          hw,  hh,  hd,
         -hw,  hh,  hd,
-        // Back face (-Z)
+        // Back face (-Z) — XY plane
          hw, -hh, -hd,
         -hw, -hh, -hd,
         -hw,  hh, -hd,
          hw,  hh, -hd,
-        // Top face (+Y)
+        // Top face (+Y) — XZ plane
         -hw,  hh,  hd,
          hw,  hh,  hd,
          hw,  hh, -hd,
         -hw,  hh, -hd,
-        // Bottom face (-Y)
+        // Bottom face (-Y) — XZ plane
         -hw, -hh, -hd,
          hw, -hh, -hd,
          hw, -hh,  hd,
         -hw, -hh,  hd,
-        // Right face (+X)
+        // Right face (+X) — ZY plane
          hw, -hh,  hd,
          hw, -hh, -hd,
          hw,  hh, -hd,
          hw,  hh,  hd,
-        // Left face (-X)
+        // Left face (-X) — ZY plane
         -hw, -hh, -hd,
         -hw, -hh,  hd,
         -hw,  hh,  hd,
@@ -63,6 +72,24 @@ pub fn generate_board_mesh(width: f64, height: f64, depth: f64) -> MeshData {
         -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,
     ];
 
+    // UV coordinates — scaled to face dimensions (1 UV = 1 inch)
+    // Grain runs along Z (depth) axis by default
+    #[rustfmt::skip]
+    let uvs: Vec<f32> = vec![
+        // Front face (+Z) — width × height
+        0.0, 0.0,  w, 0.0,  w, h,  0.0, h,
+        // Back face (-Z) — width × height
+        0.0, 0.0,  w, 0.0,  w, h,  0.0, h,
+        // Top face (+Y) — width × depth (grain along depth)
+        0.0, 0.0,  w, 0.0,  w, d,  0.0, d,
+        // Bottom face (-Y) — width × depth
+        0.0, 0.0,  w, 0.0,  w, d,  0.0, d,
+        // Right face (+X) — depth × height (grain along depth)
+        0.0, 0.0,  d, 0.0,  d, h,  0.0, h,
+        // Left face (-X) — depth × height
+        0.0, 0.0,  d, 0.0,  d, h,  0.0, h,
+    ];
+
     #[rustfmt::skip]
     let indices: Vec<u32> = vec![
         // Front
@@ -82,6 +109,7 @@ pub fn generate_board_mesh(width: f64, height: f64, depth: f64) -> MeshData {
     MeshData {
         positions,
         normals,
+        uvs,
         indices,
     }
 }
@@ -97,6 +125,7 @@ mod tests {
         assert_eq!(mesh.triangle_count(), 12);
         assert_eq!(mesh.positions.len(), 72); // 24 * 3
         assert_eq!(mesh.normals.len(), 72); // 24 * 3
+        assert_eq!(mesh.uvs.len(), 48); // 24 * 2
         assert_eq!(mesh.indices.len(), 36); // 12 * 3
     }
 
@@ -115,7 +144,6 @@ mod tests {
     #[test]
     fn test_box_dimensions() {
         let mesh = generate_board_mesh(4.0, 6.0, 10.0);
-        // Find min/max for each axis
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
         let mut min_y = f32::MAX;
@@ -133,5 +161,13 @@ mod tests {
         assert!((max_x - min_x - 4.0).abs() < 0.001);
         assert!((max_y - min_y - 6.0).abs() < 0.001);
         assert!((max_z - min_z - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_uvs_non_negative() {
+        let mesh = generate_board_mesh(3.0, 5.0, 8.0);
+        for &uv in &mesh.uvs {
+            assert!(uv >= 0.0, "UV should be non-negative: {}", uv);
+        }
     }
 }

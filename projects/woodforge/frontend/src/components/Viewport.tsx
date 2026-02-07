@@ -10,6 +10,9 @@ import {
   cameraZoom,
   setPosition,
   computeSnapPosition,
+  selectNode,
+  deselectAll,
+  pickObject,
 } from '../wasm';
 
 export function Viewport() {
@@ -19,9 +22,12 @@ export function Viewport() {
   const isDragging = useRef(false);
   const dragButton = useRef(-1);
   const lastMouse = useRef({ x: 0, y: 0 });
+  const mouseDownPos = useRef({ x: 0, y: 0 });
+  const mouseMoved = useRef(false);
 
   const activeTool = useStore((s) => s.activeTool);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
+  const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   const setWasmReady = useStore((s) => s.setWasmReady);
   const setSceneTree = useStore((s) => s.setSceneTree);
 
@@ -100,6 +106,8 @@ export function Viewport() {
       isDragging.current = true;
       dragButton.current = e.button;
       lastMouse.current = { x: e.clientX, y: e.clientY };
+      mouseDownPos.current = { x: e.clientX, y: e.clientY };
+      mouseMoved.current = false;
       e.preventDefault();
     },
     []
@@ -112,6 +120,13 @@ export function Viewport() {
       const dx = e.clientX - lastMouse.current.x;
       const dy = e.clientY - lastMouse.current.y;
       lastMouse.current = { x: e.clientX, y: e.clientY };
+
+      // Track if mouse has moved beyond a small threshold (3px)
+      const totalDx = e.clientX - mouseDownPos.current.x;
+      const totalDy = e.clientY - mouseDownPos.current.y;
+      if (Math.abs(totalDx) > 3 || Math.abs(totalDy) > 3) {
+        mouseMoved.current = true;
+      }
 
       // Move tool: drag selected object
       if (activeTool === 'move' && selectedNodeId && dragButton.current === 0) {
@@ -147,10 +162,29 @@ export function Viewport() {
     [activeTool, selectedNodeId, setSceneTree]
   );
 
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
-    dragButton.current = -1;
-  }, []);
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      // Click-to-select: select tool, left button, no drag
+      if (
+        activeTool === 'select' &&
+        dragButton.current === 0 &&
+        !mouseMoved.current
+      ) {
+        const nodeId = pickObject(e.clientX, e.clientY);
+        if (nodeId) {
+          selectNode(nodeId);
+          setSelectedNodeId(nodeId);
+        } else {
+          deselectAll();
+          setSelectedNodeId(null);
+        }
+      }
+
+      isDragging.current = false;
+      dragButton.current = -1;
+    },
+    [activeTool, setSelectedNodeId]
+  );
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     cameraZoom(-e.deltaY * 0.01);

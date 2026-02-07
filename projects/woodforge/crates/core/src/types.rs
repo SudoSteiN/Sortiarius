@@ -87,6 +87,8 @@ pub struct MeshData {
     pub positions: Vec<f32>,
     /// Flat array of vertex normals [nx, ny, nz, nx, ny, nz, ...]
     pub normals: Vec<f32>,
+    /// Flat array of UV coordinates [u, v, u, v, ...]
+    pub uvs: Vec<f32>,
     /// Triangle indices (u32 for large meshes)
     pub indices: Vec<u32>,
 }
