@@ -27,3 +27,8 @@ Quick-reference for Sortiarius's persistent knowledge. Domain-specific details l
 
 <!-- Add notes here that span multiple domains -->
 <!-- Use `<!-- learned: YYYY-MM-DD -->` timestamps for traceability -->
+
+### Installed: `install` via `brew install`
+<!-- auto-memory: 2026-02-07 session:e0c70ab9-7556-40a5-8237-ad37f580c071 category:dependency domain:general -->
+Full command: brew install gh 2>&1
+

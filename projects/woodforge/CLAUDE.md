@@ -14,10 +14,16 @@ Sortiarius global identity, skills, and rules apply via ~/.claude/CLAUDE.md.
 - **Testing:** cargo test (Rust), Vitest (JS), Playwright (E2E)
 - **Hosting:** Static site (all computation in WASM, no backend)
 
-## Key Files
+## Repository
+- **GitHub:** https://github.com/SudoSteiN/WoodForge
+- **Local clone:** `~/WoodForge`
+- Source code lives in the WoodForge repo, not here.
+
+## Planning Artifacts (this directory)
 - SPEC.md — Product specification
 - PLAN.md — Progress tracker
 - CRITERIA.md — Evaluation criteria
+- PROJECT.md — Quick reference
 
 ## Project Rules
 - Local-first architecture: all computation in browser WASM

@@ -1,7 +1,0 @@
-[workspace]
-members = [
-    "crates/core",
-    "crates/renderer",
-    "crates/wasm-bridge",
-]
-resolver = "2"
